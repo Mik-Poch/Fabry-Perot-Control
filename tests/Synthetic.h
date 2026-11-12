@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <random>
 #include <vector>
+#include <limits>
 
 namespace synthetic {
 constexpr double pi = 3.14159265358979323846;
@@ -15,8 +16,8 @@ struct Parameters {
     double amplitude = 200, background = 4, noise = 0;
     unsigned seed = 42;
 };
-inline std::vector<unsigned char> frame(const Parameters& p) {
-    std::vector<unsigned char> image(static_cast<std::size_t>(p.width)*p.height);
+template<typename Pixel> inline std::vector<Pixel> frameTyped(const Parameters& p) {
+    std::vector<Pixel> image(static_cast<std::size_t>(p.width)*p.height);
     std::mt19937 rng(p.seed);
     std::normal_distribution<double> noise(0,1);
     for (int y = 0; y < p.height; ++y) for (int x = 0; x < p.width; ++x) {
@@ -25,10 +26,13 @@ inline std::vector<unsigned char> frame(const Parameters& p) {
         // Flat illumination in the useful region and a smooth finite aperture.
         const double taper = std::clamp((p.radius-std::sqrt(q))/12.0,0.0,1.0);
         const double value = p.background+taper*p.amplitude/(1+p.airy*s*s)+p.noise*noise(rng);
-        image[static_cast<std::size_t>(y)*p.width+x] = static_cast<unsigned char>(
-            std::clamp(std::lround(value),0L,255L));
+        image[static_cast<std::size_t>(y)*p.width+x] = static_cast<Pixel>(
+            std::clamp(std::lround(value),0L,static_cast<long>(std::numeric_limits<Pixel>::max())));
     }
     return image;
+}
+inline std::vector<unsigned char> frame(const Parameters& p) {
+    return frameTyped<unsigned char>(p);
 }
 inline double phaseError(double a, double b) {
     double d = std::abs(a-b);

@@ -2,7 +2,8 @@
 
 Single-frame Fabry–Pérot fringe analysis for a LabVIEW instrument application.
 The production targets are **Windows x86 and x64, MSVC 2022, C++17**. The primary
-integration is **32-bit LabVIEW on Windows 11 64-bit**, using the x86 DLL.
+integration is **32-bit LabVIEW on Windows 11 64-bit**, using the x86 DLL and
+native **U16 input/cropped-output arrays**. Legacy U8 callers remain supported.
 The DLL uses the C++
 standard library only: no Python, OpenCV, GPU, LabVIEW runtime, or external
 image-processing dependency. Python is used only for an independent development
@@ -15,7 +16,7 @@ On this repository's **Actions** tab, select **Windows x86 and x64 DLL**, open a
 run for the desired commit, and download **FPAnalyzer-windows-x86** for 32-bit
 LabVIEW or **FPAnalyzer-windows-x64** for 64-bit LabVIEW under
 **Artifacts** (GitHub sign-in may be required). Extract `bin/FPAnalyzer.dll` and
-`include/FPAnalyzer.h`. The artifact is uploaded only after the MSVC build,
+`include/FPAnalyzer.h` and `include/FPAnalyzer_LabVIEW.h`. The artifact is uploaded only after the MSVC build,
 native tests, C caller, Python ctypes test and exact export-name check succeed.
 Test output is available in the job log and the matching
 **FPAnalyzer-test-report-x86** or **FPAnalyzer-test-report-x64** artifact.
@@ -49,7 +50,7 @@ when changing architectures. CI builds and tests both with matching Python.
 
 The x86 DLL is `build-x86/Release/FPAnalyzer.dll`; distribution files are in
 `package-x86/`. `dumpbin /exports build-x86/Release/FPAnalyzer.dll` must show only
-`FP_GetApiVersion` and `FP_AnalyzeFrameU8`, undecorated. The public header compiles
+`FP_GetApiVersion`, `FP_AnalyzeFrameU8` and `FP_AnalyzeFrameU16`, undecorated. The public header compiles
 as C99; the C ABI test links and calls the actual shared library.
 
 Linux is a development/testing platform, not a way to generate the Windows DLL:
@@ -74,13 +75,39 @@ int FP_GetApiVersion(void); /* returns 1 */
 int FP_AnalyzeFrameU8(const unsigned char image_pixels[],
     int image_width, int image_height, unsigned char cropped_pixels[],
     int cropped_capacity_pixels, int roi_out[3], double metrics_out[4]);
+int FP_AnalyzeFrameU16(const unsigned short image_pixels[],
+    int image_width, int image_height, unsigned short cropped_pixels[],
+    int cropped_capacity_pixels, int roi_out[], double metrics_out[]);
 ```
 
-Both use C linkage and `cdecl`. All buffers belong to the caller. Input is U8
+All functions use C linkage and `cdecl`. API version remains **1**: U16 support
+is additive and preserves U8 ABI and behavior. Check for the new export rather
+than relying on version 1 alone to identify a U16-capable DLL.
+
+U16 is recommended for LabVIEW and higher-dynamic-range cameras: input/crop
+arguments are native `unsigned short` arrays (16 bits, 0–65535), recognized as
+integer data rather than characters. 8-/10-/12-/14-/16-bit effective grayscale
+data can occupy U16 elements without scaling to an assumed maximum. Import
+**`FPAnalyzer_LabVIEW.h`** in LabVIEW's Shared Library Wizard, select C/cdecl,
+and configure image/crop as 1D **U16 Array Data Pointer**, dimensions/capacity as
+I32 values, ROI as I32[3], metrics as DBL[4] and the return value as I32. Allocate
+all buffers before calling. This simplified C header declares only the version
+and U16 functions; `FPAnalyzer.h` remains the standard C/C++ header.
+
+For U16, capacity is in **pixels/elements, not bytes**: a 1280×960 image needs at
+most 960×960 = **921600 U16 crop elements**, occupying 1843200 bytes. After a
+valid crop, take only the first `roi[2]*roi[2]` U16 elements, then reshape to a
+`roi[2]` by `roi[2]` 2D U16 array. Crop samples are copied exactly, including
+values above 255 and the endpoints 0 and 65535. See
+[LabVIEW integration](docs/labview_integration.md) for the exact parameter table,
+status handling, import instructions and initial LabVIEW checks.
+
+All buffers belong to the caller. Input is U8 or U16 (according to the entry point)
 grayscale, row-major, no row padding: `image_pixels[y*width+x]`. Coordinates are
 zero-based, X rightward, Y downward; integer coordinates refer to pixel centers.
 The API requires 32-bit `int` and 64-bit IEEE-754 `double`. The image product must
-fit signed I32 (at most `INT_MAX` pixels). Width and height must be positive;
+fit signed I32 (at most `INT_MAX` pixels); actual process memory may impose a
+much lower bound, especially for U16 in 32-bit LabVIEW. Width and height must be positive;
 images smaller than 24 pixels on either side cannot provide an ROI.
 
 | Output | Meaning |
@@ -99,7 +126,7 @@ not pass LabVIEW handles, strided images, packed RGB data or overlapping arrays.
 
 | Status | ROI | Crop | Metrics |
 | --- | --- | --- | --- |
-| `0` success | valid | exactly `size*size` valid bytes | all four valid |
+| `0` success | valid | exactly `size*size` valid pixel elements | all four valid |
 | `-1` invalid argument | zero | untouched | NaN |
 | `-2` insufficient capacity | valid; required capacity = `size*size` | untouched | NaN |
 | `-3` no detectable fringe region | zero | untouched | NaN |
@@ -114,6 +141,16 @@ The crop buffer tail is always untouched. Capacity is checked before copying.
 For simple LabVIEW integration allocate `min(width,height)^2` crop elements (or
 `width*height`); a smaller capacity may return `-2` with retry geometry. Call again
 on the same frame after resizing. Calls keep no shared mutable state.
+
+The U16 analysis uses the same numerical stages as U8 through a typed
+double-precision view. It subtracts the frame's 1st intensity percentile and
+maps the 1st–99th percentile span to 200 floating-point analysis units (full
+range fallback when this span is zero), without clipping, rounding or U8
+conversion. This makes intensity thresholds relative to the observed contrast,
+independent of effective ADC depth. The original U8 thresholds remain intact;
+phase, center coordinates and finesse definitions are unchanged. Synthetic
+U8/scaled-U16 comparisons allow 0.1-pixel center difference, 0.005-cycle phase
+difference and 5% finesse difference; the original ground-truth tests also run.
 
 ## Algorithm and scientific conventions
 

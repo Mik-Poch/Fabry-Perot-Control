@@ -31,7 +31,31 @@ std::vector<double> smooth(const std::vector<double>& in, int w, int h) {
 }
 }
 
-bool detectRoi(const unsigned char* pixels, int width, int height, Roi& roi) {
+PixelView<unsigned short> analysisView(const unsigned short* pixels, std::size_t count) {
+    // Exact U16 histogram: no U8 conversion, assumed camera bit depth, or
+    // full-frame floating-point allocation (important in a 32-bit process).
+    std::vector<std::size_t> histogram(65536, 0);
+    for (std::size_t i = 0; i < count; ++i) ++histogram[pixels[i]];
+    const auto percentile = [&](std::size_t rank) {
+        std::size_t sum = 0;
+        for (std::size_t i = 0; i < histogram.size(); ++i) {
+            sum += histogram[i];
+            if (sum > rank) return static_cast<double>(i);
+        }
+        return 0.0;
+    };
+    double low = percentile((count-1)/100);
+    double high = percentile((count-1)-((count-1)/100));
+    // Retain sparse patterns when the central percentiles are both background.
+    if (high <= low) { low = percentile(0); high = percentile(count-1); }
+    // Put the robust span in reference analysis units, entirely in double.
+    // Thus existing contrast/gradient/profile floors are relative to this
+    // frame's contrast rather than to 255, 65535 or an inferred ADC bit depth.
+    return {pixels, low, high > low ? 200.0/(high-low) : 1.0};
+}
+
+template<typename Pixel>
+bool detectRoi(PixelView<Pixel> pixels, int width, int height, Roi& roi) {
     if (width < 24 || height < 24) return false;
     const int scale = std::max(1, static_cast<int>(std::ceil(std::max(width, height) / 400.0)));
     const int w = (width - 1) / scale + 1, h = (height - 1) / scale + 1;
@@ -111,10 +135,11 @@ bool detectRoi(const unsigned char* pixels, int width, int height, Roi& roi) {
     return true;
 }
 
-bool estimateCenter(const unsigned char* pixels, int size, Center& center) {
+template<typename Pixel>
+bool estimateCenter(PixelView<Pixel> pixels, int size, Center& center) {
     if (size < 24) return false;
     std::vector<double> input(static_cast<std::size_t>(size)*size);
-    std::copy_n(pixels, input.size(), input.begin());
+    for (std::size_t i = 0; i < input.size(); ++i) input[i] = pixels[i];
     const auto blurred = smooth(smooth(input, size, size), size, size);
     struct Gradient { double x, y, nx, ny, magnitude; };
     std::vector<Gradient> gradients;
@@ -163,7 +188,8 @@ bool estimateCenter(const unsigned char* pixels, int size, Center& center) {
     return true;
 }
 
-Profile radialProfile(const unsigned char* pixels, int size, const Center& center) {
+template<typename Pixel>
+Profile radialProfile(PixelView<Pixel> pixels, int size, const Center& center) {
     // Only complete circles: edge truncation must not bias peak intensity/width.
     const double radius = std::min({center.x,center.y,size-1-center.x,size-1-center.y})-1;
     Profile result;
@@ -270,5 +296,22 @@ bool measureProfile(const Profile& profile, Measurement& result) {
     if (result.phase >= 1) result.phase = 0;
     result.finesse = spacing/quantile(widths,0.5);
     return std::isfinite(result.phase) && std::isfinite(result.finesse) && result.finesse > 0;
+}
+// Instantiate one numerical implementation for both native pixel types.
+template bool detectRoi(PixelView<unsigned char>, int, int, Roi&);
+template bool detectRoi(PixelView<unsigned short>, int, int, Roi&);
+template bool estimateCenter(PixelView<unsigned char>, int, Center&);
+template bool estimateCenter(PixelView<unsigned short>, int, Center&);
+template Profile radialProfile(PixelView<unsigned char>, int, const Center&);
+template Profile radialProfile(PixelView<unsigned short>, int, const Center&);
+
+bool detectRoi(const unsigned char* p, int w, int h, Roi& r) {
+    return detectRoi(PixelView<unsigned char>{p}, w, h, r);
+}
+bool estimateCenter(const unsigned char* p, int s, Center& c) {
+    return estimateCenter(PixelView<unsigned char>{p}, s, c);
+}
+Profile radialProfile(const unsigned char* p, int s, const Center& c) {
+    return radialProfile(PixelView<unsigned char>{p}, s, c);
 }
 } // namespace fp

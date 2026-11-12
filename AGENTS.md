@@ -8,8 +8,8 @@ worktree unless explicitly requested. The production target is MSVC C++17,
 Windows x86 (32-bit LabVIEW) and x64; Linux builds are useful for algorithm and
 sanitizer validation.
 
-Keep the public header C-compatible and export only FP_GetApiVersion and
-FP_AnalyzeFrameU8. Never allow exceptions, ownership transfer, or STL types
+Keep the public header C-compatible and export only FP_GetApiVersion,
+FP_AnalyzeFrameU8 and FP_AnalyzeFrameU16. Never allow exceptions, ownership transfer, or STL types
 across the API. Preserve status and output-validity contracts when editing.
 All per-frame state must remain local to the call.
 

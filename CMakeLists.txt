@@ -46,10 +46,21 @@ if(BUILD_TESTING)
     target_include_directories(fp_tests PRIVATE tests)
     add_test(NAME analysis COMMAND fp_tests)
 
+    add_executable(fp_u16_tests tests/test_u16.cpp)
+    target_link_libraries(fp_u16_tests PRIVATE FPAnalyzer)
+    target_include_directories(fp_u16_tests PRIVATE tests)
+    target_compile_features(fp_u16_tests PRIVATE cxx_std_17)
+    add_test(NAME analysis_u16 COMMAND fp_u16_tests)
+
     add_executable(fp_c_api_test tests/test_c_header.c)
     target_link_libraries(fp_c_api_test PRIVATE FPAnalyzer)
     set_target_properties(fp_c_api_test PROPERTIES C_STANDARD 99 C_STANDARD_REQUIRED YES)
     add_test(NAME c_header_and_abi COMMAND fp_c_api_test)
+
+    add_executable(fp_labview_header_test tests/test_labview_header.c)
+    target_link_libraries(fp_labview_header_test PRIVATE FPAnalyzer)
+    set_target_properties(fp_labview_header_test PROPERTIES C_STANDARD 99 C_STANDARD_REQUIRED YES)
+    add_test(NAME labview_header_and_abi COMMAND fp_labview_header_test)
 
     add_executable(fp_real_frames tests/test_real_frames.cpp)
     target_link_libraries(fp_real_frames PRIVATE FPAnalyzer)
@@ -67,4 +78,4 @@ if(BUILD_TESTING)
 endif()
 
 install(TARGETS FPAnalyzer RUNTIME DESTINATION bin LIBRARY DESTINATION lib ARCHIVE DESTINATION lib)
-install(FILES include/FPAnalyzer.h DESTINATION include)
+install(FILES include/FPAnalyzer.h include/FPAnalyzer_LabVIEW.h DESTINATION include)

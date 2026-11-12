@@ -54,6 +54,18 @@ FP_API int FP_CALL FP_AnalyzeFrameU8(
     unsigned char cropped_pixels[], int cropped_capacity_pixels,
     int roi_out[3], double metrics_out[4]);
 
+/* Native U16 counterpart with the same status/geometry/metric contract above;
+ * on success size*size U16 elements (2*size*size bytes) are written.
+ * unsigned short is 16 bits. Capacities/counts are U16 ELEMENTS, not bytes;
+ * each input/output pixel occupies 2 bytes. Crop values are copied exactly.
+ * Analysis uses the original precision; no U8 conversion is performed.
+ * API version remains 1: this is an additive, backward-compatible entry point.
+ */
+FP_API int FP_CALL FP_AnalyzeFrameU16(
+    const unsigned short image_pixels[], int image_width, int image_height,
+    unsigned short cropped_pixels[], int cropped_capacity_pixels,
+    int roi_out[], double metrics_out[]);
+
 #ifdef __cplusplus
 }
 #endif

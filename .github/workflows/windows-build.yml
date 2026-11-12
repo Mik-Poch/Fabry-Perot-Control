@@ -60,7 +60,7 @@ jobs:
           $names = @($output | ForEach-Object {
             if ($_ -match '^\s+\d+\s+[0-9A-Fa-f]+\s+[0-9A-Fa-f]+\s+(\S+)') { $Matches[1] }
           }) | Sort-Object
-          if (($names -join ',') -cne 'FP_AnalyzeFrameU8,FP_GetApiVersion') {
+          if (($names -join ',') -cne 'FP_AnalyzeFrameU16,FP_AnalyzeFrameU8,FP_GetApiVersion') {
             throw "Unexpected DLL exports: $($names -join ',')"
           }
       - name: Stage distributable
@@ -72,6 +72,7 @@ jobs:
           path: |
             package/bin/FPAnalyzer.dll
             package/include/FPAnalyzer.h
+            package/include/FPAnalyzer_LabVIEW.h
           if-no-files-found: error
       - name: Upload test report
         if: always()
