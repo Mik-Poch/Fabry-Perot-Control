@@ -16,7 +16,9 @@ On this repository's **Actions** tab, select **Windows x86 and x64 DLL**, open a
 run for the desired commit, and download **FPAnalyzer-windows-x86** for 32-bit
 LabVIEW or **FPAnalyzer-windows-x64** for 64-bit LabVIEW under
 **Artifacts** (GitHub sign-in may be required). Extract `bin/FPAnalyzer.dll` and
-`include/FPAnalyzer.h` and `include/FPAnalyzer_LabVIEW.h`. The artifact is uploaded only after the MSVC build,
+`include/FPAnalyzer.h`. These are the permanent public filenames: **FPAnalyzer.dll**
+and **FPAnalyzer.h**. There is one simplified public header for LabVIEW and
+native callers. The artifact is uploaded only after the MSVC build,
 native tests, C caller, Python ctypes test and exact export-name check succeed.
 Test output is available in the job log and the matching
 **FPAnalyzer-test-report-x86** or **FPAnalyzer-test-report-x64** artifact.
@@ -51,7 +53,9 @@ when changing architectures. CI builds and tests both with matching Python.
 The x86 DLL is `build-x86/Release/FPAnalyzer.dll`; distribution files are in
 `package-x86/`. `dumpbin /exports build-x86/Release/FPAnalyzer.dll` must show only
 `FP_GetApiVersion`, `FP_AnalyzeFrameU8` and `FP_AnalyzeFrameU16`, undecorated. The public header compiles
-as C99; the C ABI test links and calls the actual shared library.
+as C99; C and C++ ABI tests link and call the actual shared library. Windows
+exports come from the `.def` file, with cdecl/visibility definitions private to
+the build. No export or calling-convention macros belong in the public header.
 
 Linux is a development/testing platform, not a way to generate the Windows DLL:
 
@@ -88,11 +92,30 @@ U16 is recommended for LabVIEW and higher-dynamic-range cameras: input/crop
 arguments are native `unsigned short` arrays (16 bits, 0–65535), recognized as
 integer data rather than characters. 8-/10-/12-/14-/16-bit effective grayscale
 data can occupy U16 elements without scaling to an assumed maximum. Import
-**`FPAnalyzer_LabVIEW.h`** in LabVIEW's Shared Library Wizard, select C/cdecl,
+**`FPAnalyzer.h`** in LabVIEW's Shared Library Wizard, select C/cdecl,
 and configure image/crop as 1D **U16 Array Data Pointer**, dimensions/capacity as
 I32 values, ROI as I32[3], metrics as DBL[4] and the return value as I32. Allocate
-all buffers before calling. This simplified C header declares only the version
-and U16 functions; `FPAnalyzer.h` remains the standard C/C++ header.
+all buffers before calling. This single simplified C header declares all three
+exports, including the legacy U8 entry point. Select the version and U16
+functions for the recommended camera interface. No special preprocessor
+definitions are required for automatic VI generation. There is no separate
+LabVIEW-specific header.
+
+C callers include `FPAnalyzer.h` directly. C++ callers provide C linkage in
+their own source, keeping the public header plain C:
+
+```cpp
+extern "C" {
+#include "FPAnalyzer.h"
+}
+```
+
+Use the C/cdecl calling convention (the MSVC project explicitly selects `/Gd`).
+The automated header contract checks plain declarations, the sole public header
+name and agreement with the export lists. C/C++ ABI tests verify signatures and
+calls; Windows CI compares actual `dumpbin /exports` names to the header and
+checks the installed header before uploading each architecture's package. These
+checks do not establish LabVIEW Wizard or runtime validation.
 
 For U16, capacity is in **pixels/elements, not bytes**: a 1280×960 image needs at
 most 960×960 = **921600 U16 crop elements**, occupying 1843200 bytes. After a

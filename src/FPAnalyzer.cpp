@@ -1,4 +1,6 @@
+extern "C" {
 #include "FPAnalyzer.h"
+}
 #include "Analysis.h"
 
 #include <algorithm>
@@ -92,9 +94,9 @@ int analyzeFrame(
 }
 } // namespace
 
-extern "C" FP_API int FP_CALL FP_GetApiVersion(void) { return 1; }
+extern "C" FP_INTERNAL_EXPORT int FP_INTERNAL_CALL FP_GetApiVersion(void) { return 1; }
 
-extern "C" FP_API int FP_CALL FP_AnalyzeFrameU8(
+extern "C" FP_INTERNAL_EXPORT int FP_INTERNAL_CALL FP_AnalyzeFrameU8(
     const unsigned char image_pixels[], int image_width, int image_height,
     unsigned char cropped_pixels[], int cropped_capacity_pixels,
     int roi_out[3], double metrics_out[4]) {
@@ -102,7 +104,7 @@ extern "C" FP_API int FP_CALL FP_AnalyzeFrameU8(
                         cropped_capacity_pixels, roi_out, metrics_out);
 }
 
-extern "C" FP_API int FP_CALL FP_AnalyzeFrameU16(
+extern "C" FP_INTERNAL_EXPORT int FP_INTERNAL_CALL FP_AnalyzeFrameU16(
     const unsigned short image_pixels[], int image_width, int image_height,
     unsigned short cropped_pixels[], int cropped_capacity_pixels,
     int roi_out[], double metrics_out[]) {

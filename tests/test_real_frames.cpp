@@ -1,4 +1,6 @@
+extern "C" {
 #include "FPAnalyzer.h"
+}
 #include <filesystem>
 #include <fstream>
 #include <iostream>

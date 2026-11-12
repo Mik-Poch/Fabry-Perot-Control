@@ -1,26 +1,11 @@
-#ifndef FP_ANALYZER_H
-#define FP_ANALYZER_H
-
-/* FPAnalyzer API v1. All arrays are caller-owned, contiguous and unpadded.
+/* FPAnalyzer API v1. Permanent public header for FPAnalyzer.dll.
+ * All functions use C linkage and C / cdecl; no preprocessor definitions are
+ * needed by the LabVIEW Import Shared Library Wizard. C++ callers wrap the
+ * include in an extern "C" block in their own source.
+ * All arrays are caller-owned, contiguous and unpadded.
  * Requires 8-bit bytes, 32-bit int and IEEE-754 double on supported platforms.
  * See docs/labview_integration.md for buffer sizes and output validity.
  */
-#if defined(_WIN32)
-#  define FP_CALL __cdecl
-#  if defined(FP_ANALYZER_BUILD)
-#    define FP_API __declspec(dllexport)
-#  else
-#    define FP_API __declspec(dllimport)
-#  endif
-#else
-#  define FP_CALL
-#  define FP_API __attribute__((visibility("default")))
-#endif
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 enum {
     FP_SUCCESS = 0,
     FP_INVALID_ARGUMENT = -1,
@@ -29,7 +14,7 @@ enum {
     FP_INSUFFICIENT_RINGS = -4
 };
 
-FP_API int FP_CALL FP_GetApiVersion(void);
+int FP_GetApiVersion(void);
 
 /* image_pixels: image_width*image_height U8 elements (row-major).
  * cropped_pixels: cropped_capacity_pixels U8 elements; must not overlap input.
@@ -49,7 +34,7 @@ FP_API int FP_CALL FP_GetApiVersion(void);
  * Phase convention: bright peaks satisfy r^2/spacing + phase = integer.
  * Centers are in cropped-image pixel coordinates, including fractional parts.
  */
-FP_API int FP_CALL FP_AnalyzeFrameU8(
+int FP_AnalyzeFrameU8(
     const unsigned char image_pixels[], int image_width, int image_height,
     unsigned char cropped_pixels[], int cropped_capacity_pixels,
     int roi_out[3], double metrics_out[4]);
@@ -61,12 +46,7 @@ FP_API int FP_CALL FP_AnalyzeFrameU8(
  * Analysis uses the original precision; no U8 conversion is performed.
  * API version remains 1: this is an additive, backward-compatible entry point.
  */
-FP_API int FP_CALL FP_AnalyzeFrameU16(
+int FP_AnalyzeFrameU16(
     const unsigned short image_pixels[], int image_width, int image_height,
     unsigned short cropped_pixels[], int cropped_capacity_pixels,
     int roi_out[], double metrics_out[]);
-
-#ifdef __cplusplus
-}
-#endif
-#endif

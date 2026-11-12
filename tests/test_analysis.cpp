@@ -1,4 +1,6 @@
+extern "C" {
 #include "FPAnalyzer.h"
+}
 #include "Analysis.h"
 #include "Synthetic.h"
 

@@ -13,7 +13,10 @@ pipeline before instrument use.
 On the repository's **Actions** tab, select **Windows x86 and x64 DLL**, open a
 successful run for the desired U16-capable commit, and download **FPAnalyzer-windows-x86**
 under **Artifacts** for 32-bit LabVIEW. Extract `bin/FPAnalyzer.dll` and
-`include/FPAnalyzer.h` and `include/FPAnalyzer_LabVIEW.h`. GitHub sign-in may be required. For 64-bit LabVIEW use
+`include/FPAnalyzer.h`. The permanent public filenames are **FPAnalyzer.dll**
+and **FPAnalyzer.h**; the same simplified C header is used for LabVIEW and
+native development. No second LabVIEW-specific header is distributed.
+GitHub sign-in may be required. For 64-bit LabVIEW use
 **FPAnalyzer-windows-x64** instead. Check LabVIEW's bitness in **Help → About**;
 the Windows architecture alone does not determine which DLL to use.
 
@@ -26,23 +29,30 @@ Microsoft; do not download individual runtime DLLs from third-party sites.
 ## Import Shared Library Wizard
 
 1. Download the matching successful Windows Actions artifact or build Release locally.
-   Keep the DLL and both headers in a stable project directory; use an
+   Keep `FPAnalyzer.dll` and `FPAnalyzer.h` in a stable project directory; use an
    absolute DLL path while diagnosing loading problems. Deploy the matching
    MSVC Redistributable if the machine lacks the required runtime.
 2. In LabVIEW open **Tools → Import → Shared Library** (menu wording can vary),
    choose to create VIs for a shared library, select the DLL and the public
-   simplified header **`include/FPAnalyzer_LabVIEW.h`**, then select
+   simplified header **`include/FPAnalyzer.h`**, then select
    `FP_GetApiVersion` and `FP_AnalyzeFrameU16`. This header uses simple C
-   declarations without export macros or C++ constructs. It intentionally omits
-   the legacy U8 function so the image arguments are recognized as U16 arrays.
+   declarations without export macros, compiler attributes or C++ constructs.
+   No special preprocessor definitions are needed for automatic VI generation.
+   The legacy U8 function remains declared for compatibility; choose the U16
+   function for U16 image arrays.
 3. Set **C / cdecl** explicitly; the simplified header documents the convention
-   in a comment. It is a Wizard/C declaration file, not a replacement for the
-   standard C/C++ development header `FPAnalyzer.h`. Check each generated
+   in a comment. `FPAnalyzer.h` is the sole public declaration file for both
+   the Wizard and native callers. Check each generated
    prototype and array setting instead of assuming the Wizard inferred them.
 4. Finish the Wizard and open each generated Call Library Function Node's
    configuration. **Manual configuration of array-pointer parameters is often
    necessary.** C's `roi_out[3]` and `metrics_out[4]` declarations are pointers at
    the ABI; the Wizard may not infer their fixed allocation lengths.
+
+The simplified declaration format was reported by the user to work with the
+Import Shared Library Wizard. The current canonical-header build is checked
+with native C/C++ compilation, ABI calls and export inspection; these checks
+alone do not verify automatic VI generation or execution inside LabVIEW.
 
 ## Manual Call Library Function Node configuration
 

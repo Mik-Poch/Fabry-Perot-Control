@@ -13,6 +13,25 @@ FP_AnalyzeFrameU8 and FP_AnalyzeFrameU16. Never allow exceptions, ownership tran
 across the API. Preserve status and output-validity contracts when editing.
 All per-frame state must remain local to the call.
 
+Permanent distribution convention: the public files are exactly
+`FPAnalyzer.dll` and `FPAnalyzer.h`. Maintain one simplified, plain C header for
+both native callers and LabVIEW's Import Shared Library Wizard. Do not create
+or distribute a separate LabVIEW header. Do not put compiler attributes,
+export/calling-convention macros, platform conditionals or C++ linkage blocks
+in the public header; it must import without special preprocessor definitions.
+Use unsigned short for U16 arrays, int for I32 and double for DBL. Preserve the
+legacy U8 declarations and status constants. C++ sources wrap the header include
+in extern "C" in their own source. MSVC uses /Gd; compiler definitions for
+exports/cdecl are PRIVATE to the DLL target and Windows names come from the
+existing src/FPAnalyzer.def. Never move them into the public header.
+
+When adding a public function, update FPAnalyzer.h, its implementation, Windows
+.def and Linux export map together. Extend the signature/ABI tests and the
+public-header contract test's required function list. Verify that dumpbin
+exports exactly the names declared by the header on x86 and x64. Every Windows
+DLL artifact must include FPAnalyzer.dll and the identical FPAnalyzer.h and no
+second public header. Keep the package validation step before artifact upload.
+
 Build: `cmake -S . -B build -DCMAKE_BUILD_TYPE=Release`, then
 `cmake --build build --config Release --parallel 4` and
 `ctest --test-dir build -C Release --output-on-failure`.
@@ -24,3 +43,5 @@ Tests must run in Release too; do not use disabled `assert` for test checks.
 Record accuracy, failure statuses and measured timing; never claim Windows or
 LabVIEW validation from a Linux test alone. Real camera frames are optional
 local inputs under data/test_frames and must not be committed without consent.
+Header compilation and ABI calls do not establish Wizard import, automatic VI
+generation or actual LabVIEW execution; report those outcomes separately.

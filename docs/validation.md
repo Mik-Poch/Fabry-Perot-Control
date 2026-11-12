@@ -1,5 +1,11 @@
 # Validation record
 
+Current permanent public filenames: **FPAnalyzer.dll** and **FPAnalyzer.h**.
+The single header uses plain C declarations for native callers and LabVIEW's
+Wizard. Earlier entries below record historical builds and packaging; their
+references to two headers are superseded by the permanent convention described
+in README.md and docs/labview_integration.md.
+
 Recorded during implementation on 2026-11-12. Local measurements below describe
 the Linux development build. The Windows CI outcome is recorded separately;
 no LabVIEW execution has been performed.
@@ -213,3 +219,34 @@ Detailed Actions logs and artifact downloads require GitHub sign-in. Windows
 results above are supported by successful runs of the committed workflow and
 its public artifact summaries; they are not inferred from Linux tests.
 Actual LabVIEW calls and real-camera validation remain unexecuted.
+
+## Permanent public header convention
+
+The restructuring starts from `fc0f760` and makes `FPAnalyzer.h` the only
+public header. It removes compiler-specific declarations and the separate
+LabVIEW header while retaining all three function signatures, status constants,
+API version 1 and the compiled C/cdecl ABI. The numerical analysis sources are
+unchanged. Native C++ callers place the include inside a C linkage block in
+their own source; the public header needs no preprocessor definitions.
+
+Windows DLL export names are controlled by the existing `.def` file. Export
+and calling-convention compiler definitions are private to the DLL target;
+MSVC callers explicitly use `/Gd`. Linux visibility is also set privately to
+the implementation, with its export map retaining the same three symbols.
+
+The local Release build passed six CTest checks: U8 analysis (6 native groups),
+U16 analysis (3 groups), C ABI, C++ signature/ABI, public-header contract, and
+architecture-matched Python ctypes. The optional real-camera test was skipped
+because no frames were supplied. A fresh install passed the single-header and
+header-content checks. Linux dynamic symbol inspection still showed exactly
+`FP_GetApiVersion`, `FP_AnalyzeFrameU8` and `FP_AnalyzeFrameU16`.
+Temporary negative-test copies correctly rejected a compiler export macro,
+an additional public header and a missing `.def` entry.
+
+The Windows workflow runs these tests on both x86 and x64, compares actual
+`dumpbin /exports` names to declarations in `FPAnalyzer.h`, and checks the
+installed header and DLL names before uploading each distribution. C/C++
+compilation and ABI tests do not establish LabVIEW Wizard import, automatic VI
+generation or actual LabVIEW execution for this restructured header. The user
+reported successful Wizard import of the earlier simplified declaration format;
+that report is distinct from the automated checks performed here.

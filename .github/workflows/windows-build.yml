@@ -60,11 +60,17 @@ jobs:
           $names = @($output | ForEach-Object {
             if ($_ -match '^\s+\d+\s+[0-9A-Fa-f]+\s+[0-9A-Fa-f]+\s+(\S+)') { $Matches[1] }
           }) | Sort-Object
-          if (($names -join ',') -cne 'FP_AnalyzeFrameU16,FP_AnalyzeFrameU8,FP_GetApiVersion') {
-            throw "Unexpected DLL exports: $($names -join ',')"
+          $publicHeader = Get-Content include/FPAnalyzer.h -Raw
+          $declaredNames = @([regex]::Matches($publicHeader, '(?m)^int\s+(FP_\w+)\s*\(') | ForEach-Object {
+            $_.Groups[1].Value
+          }) | Sort-Object
+          if (($names -join ',') -cne ($declaredNames -join ',')) {
+            throw "DLL exports do not match FPAnalyzer.h: $($names -join ',')"
           }
       - name: Stage distributable
         run: cmake --install build --config Release --prefix package
+      - name: Verify permanent public filenames and installed header
+        run: cmake -DPROJECT_DIR=. -DPACKAGE_DIR=package -P tests/check_public_header.cmake
       - name: Upload DLL and public header
         uses: actions/upload-artifact@v4
         with:
@@ -72,7 +78,6 @@ jobs:
           path: |
             package/bin/FPAnalyzer.dll
             package/include/FPAnalyzer.h
-            package/include/FPAnalyzer_LabVIEW.h
           if-no-files-found: error
       - name: Upload test report
         if: always()
