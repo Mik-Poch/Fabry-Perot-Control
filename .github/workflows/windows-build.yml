@@ -1,4 +1,4 @@
-name: Windows x64 DLL
+name: Windows x86 and x64 DLL
 
 on:
   push:
@@ -10,26 +10,50 @@ permissions:
 
 jobs:
   build-and-test:
+    name: Windows ${{ matrix.arch }}
     runs-on: windows-2022
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86
+            platform: Win32
+            pointer_bytes: 4
+            machine: '14C'
+          - arch: x64
+            platform: x64
+            pointer_bytes: 8
+            machine: '8664'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-          architecture: x64
-      - name: Configure MSVC x64
-        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+          architecture: ${{ matrix.arch }}
+      - name: Configure MSVC ${{ matrix.platform }} with matching Python
+        shell: pwsh
+        run: |
+          python -c "import struct; assert struct.calcsize('P') == ${{ matrix.pointer_bytes }}, 'Python bitness mismatch'"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $python = (Get-Command python).Source
+          cmake -S . -B build -G "Visual Studio 17 2022" -A ${{ matrix.platform }} "-DPython3_EXECUTABLE=$python"
       - name: Build Release
         run: cmake --build build --config Release --parallel 4
       - name: Run native, C ABI and Python ctypes tests
         run: ctest --test-dir build -C Release --output-on-failure --verbose
-      - name: Verify exact DLL exports
+      - name: Verify DLL architecture and exact exports
         shell: pwsh
         run: |
           $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
           $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
-          $dumpbin = Get-ChildItem "$vs\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe" | Sort-Object FullName -Descending | Select-Object -First 1
+          $dumpbin = Get-ChildItem "$vs\VC\Tools\MSVC\*\bin\Hostx64\${{ matrix.arch }}\dumpbin.exe" | Sort-Object FullName -Descending | Select-Object -First 1
           if (!$dumpbin) { throw "dumpbin not found" }
+          $headers = & $dumpbin.FullName /headers build/Release/FPAnalyzer.dll
+          if ($LASTEXITCODE -ne 0) { throw "dumpbin /headers failed" }
+          $headers | Write-Output
+          if (!($headers -match '^\s+${{ matrix.machine }} machine ')) {
+            throw "DLL machine does not match ${{ matrix.arch }}"
+          }
           $output = & $dumpbin.FullName /exports build/Release/FPAnalyzer.dll
           if ($LASTEXITCODE -ne 0) { throw "dumpbin failed" }
           $output | Write-Output
@@ -44,7 +68,7 @@ jobs:
       - name: Upload DLL and public header
         uses: actions/upload-artifact@v4
         with:
-          name: FPAnalyzer-windows-x64
+          name: FPAnalyzer-windows-${{ matrix.arch }}
           path: |
             package/bin/FPAnalyzer.dll
             package/include/FPAnalyzer.h
@@ -53,6 +77,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: FPAnalyzer-test-report
+          name: FPAnalyzer-test-report-${{ matrix.arch }}
           path: build/Testing/Temporary/LastTest.log
           if-no-files-found: ignore

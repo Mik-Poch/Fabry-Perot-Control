@@ -1,9 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 project(FPAnalyzer VERSION 0.1.0 LANGUAGES C CXX)
 
-if(NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
-    message(FATAL_ERROR "FPAnalyzer requires a 64-bit target")
-endif()
 if(WIN32 AND NOT MSVC)
     message(FATAL_ERROR "Use Microsoft Visual C++ for the Windows DLL")
 endif()

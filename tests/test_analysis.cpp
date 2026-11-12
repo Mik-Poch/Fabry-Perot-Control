@@ -53,7 +53,10 @@ void invalidArguments() {
     std::fill_n(crop,64,0xA5);
     int roi[3]; double m[4];
     check(FP_GetApiVersion() == 1,"API version");
-    for (const auto dims : {std::pair<int,int>{0,8},{-1,8},{8,0},{8,-1},{INT_MAX,2},{INT_MAX,INT_MAX}}) {
+    // Products just above I32_MAX and at 2^32 must be rejected before reading
+    // input, including when size_t and pointers are only 32 bits wide.
+    for (const auto dims : {std::pair<int,int>{0,8},{-1,8},{8,0},{8,-1},
+                           {46341,46341},{65536,65536},{INT_MAX,2},{INT_MAX,INT_MAX}}) {
         check(FP_AnalyzeFrameU8(input,dims.first,dims.second,crop,64,roi,m) == -1,"invalid dimensions");
         check(roi[2] == 0,"invalid ROI initialized"); checkNaN(m);
     }

@@ -1,7 +1,9 @@
 # FPAnalyzer 0.1
 
 Single-frame Fabry–Pérot fringe analysis for a LabVIEW instrument application.
-The production target is **Windows x64, MSVC, C++17**. The DLL uses the C++
+The production targets are **Windows x86 and x64, MSVC 2022, C++17**. The primary
+integration is **32-bit LabVIEW on Windows 11 64-bit**, using the x86 DLL.
+The DLL uses the C++
 standard library only: no Python, OpenCV, GPU, LabVIEW runtime, or external
 image-processing dependency. Python is used only for an independent development
 test. No actuator control, frame history, absolute calibration or optimization
@@ -9,35 +11,44 @@ is implemented.
 
 ## Download the Windows DLL
 
-On this repository's **Actions** tab, select **Windows x64 DLL**, open a successful
-run for the desired commit, and download **FPAnalyzer-windows-x64** under
+On this repository's **Actions** tab, select **Windows x86 and x64 DLL**, open a successful
+run for the desired commit, and download **FPAnalyzer-windows-x86** for 32-bit
+LabVIEW or **FPAnalyzer-windows-x64** for 64-bit LabVIEW under
 **Artifacts** (GitHub sign-in may be required). Extract `bin/FPAnalyzer.dll` and
 `include/FPAnalyzer.h`. The artifact is uploaded only after the MSVC build,
 native tests, C caller, Python ctypes test and exact export-name check succeed.
-Test output is available in the job log and **FPAnalyzer-test-report** artifact.
+Test output is available in the job log and the matching
+**FPAnalyzer-test-report-x86** or **FPAnalyzer-test-report-x64** artifact.
 An artifact from another commit is not validation of your current checkout.
 
-Use **64-bit LabVIEW**. Install the Microsoft Visual C++ 2015–2022 Redistributable
-(x64) if needed: Release builds use the normal dynamic MSVC runtime. See
+Match the DLL to **LabVIEW's bitness**, not Windows' bitness. Install the Microsoft
+Visual C++ 2015–2022 Redistributable (x86 for the x86 DLL, x64 for the x64 DLL)
+if needed: Release builds use the normal dynamic MSVC runtime. See
 [LabVIEW integration](docs/labview_integration.md) for the Wizard and manual node
 configuration. Actual LabVIEW execution has **not** been verified.
 
 ## Build with Visual Studio 2022
 
 Install Visual Studio 2022 (or Build Tools) with **Desktop development with C++**,
-the MSVC x64 toolset, Windows SDK, and CMake >=3.20. Python 3 x64 is optional for
-local ctypes tests and required in CI. From the repository root:
+the MSVC x86/x64 toolset, Windows SDK, and CMake >=3.20. Python 3 of the **same
+architecture as the DLL** is optional for local ctypes tests and required in CI.
+From the repository root, using x86 Python for Win32:
 
 ```powershell
-cmake -S . -B build -G "Visual Studio 17 2022" -A x64
-cmake --build build --config Release --parallel 4
-ctest --test-dir build -C Release --output-on-failure --verbose
-cmake --install build --config Release --prefix package
-python examples/python_ctypes_test.py build/Release/FPAnalyzer.dll
+$python = (Get-Command python).Source # select x86 Python on PATH first
+cmake -S . -B build-x86 -G "Visual Studio 17 2022" -A Win32 "-DPython3_EXECUTABLE=$python"
+cmake --build build-x86 --config Release --parallel 4
+ctest --test-dir build-x86 -C Release --output-on-failure --verbose
+cmake --install build-x86 --config Release --prefix package-x86
+python examples/python_ctypes_test.py build-x86/Release/FPAnalyzer.dll
 ```
 
-The DLL is `build/Release/FPAnalyzer.dll`; distribution files are in `package/`.
-`dumpbin /exports build/Release/FPAnalyzer.dll` must show only
+For x64, select x64 Python, replace `-A Win32` with `-A x64` and use separate
+`build-x64` / `package-x64` directories. Do not reuse a CMake build directory
+when changing architectures. CI builds and tests both with matching Python.
+
+The x86 DLL is `build-x86/Release/FPAnalyzer.dll`; distribution files are in
+`package-x86/`. `dumpbin /exports build-x86/Release/FPAnalyzer.dll` must show only
 `FP_GetApiVersion` and `FP_AnalyzeFrameU8`, undecorated. The public header compiles
 as C99; the C ABI test links and calls the actual shared library.
 

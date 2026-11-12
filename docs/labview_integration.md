@@ -1,16 +1,34 @@
 # LabVIEW integration: FPAnalyzer API v1
 
-Target: **64-bit Windows, 64-bit LabVIEW, FPAnalyzer.dll built with MSVC x64**.
-32-bit LabVIEW cannot load this DLL. The interface is designed for LabVIEW,
-but execution inside LabVIEW has **not** been tested. Verify it with your
-LabVIEW version and camera pipeline before instrument use.
+Primary target: **32-bit LabVIEW on Windows 11 64-bit**, using
+**FPAnalyzer.dll built with MSVC 2022 Win32 (x86)**. A 32-bit process requires
+a 32-bit DLL even when Windows itself is 64-bit. The separate x64 DLL is for
+64-bit LabVIEW; the two DLLs have the same API and filename but cannot be
+interchanged. The interface is designed for LabVIEW, but execution inside
+LabVIEW has **not** been tested. Verify it with your LabVIEW version and camera
+pipeline before instrument use.
+
+## Select the DLL and runtime
+
+On the repository's **Actions** tab, select **Windows x86 and x64 DLL**, open a
+successful run for the desired commit, and download **FPAnalyzer-windows-x86**
+under **Artifacts** for 32-bit LabVIEW. Extract `bin/FPAnalyzer.dll` and
+`include/FPAnalyzer.h`. GitHub sign-in may be required. For 64-bit LabVIEW use
+**FPAnalyzer-windows-x64** instead. Check LabVIEW's bitness in **Help → About**;
+the Windows architecture alone does not determine which DLL to use.
+
+Release builds use the Microsoft Visual C++ runtime. Install the supported
+**Visual C++ 2015–2022 Redistributable (x86)** for the x86 DLL, including on
+64-bit Windows. An installed x64 Redistributable does not supply the x86
+runtime. The x64 DLL requires the x64 Redistributable. Obtain installers from
+Microsoft; do not download individual runtime DLLs from third-party sites.
 
 ## Import Shared Library Wizard
 
-1. Download a successful Windows Actions artifact or build Release locally.
+1. Download the matching successful Windows Actions artifact or build Release locally.
    Keep `FPAnalyzer.dll` and `FPAnalyzer.h` in a stable project directory; use an
-   absolute DLL path while diagnosing loading problems. Deploy the MSVC x64
-   Redistributable if the machine lacks the required runtime.
+   absolute DLL path while diagnosing loading problems. Deploy the matching
+   MSVC Redistributable if the machine lacks the required runtime.
 2. In LabVIEW open **Tools → Import → Shared Library** (menu wording can vary),
    choose to create VIs for a shared library, select the DLL and the public
    header `include/FPAnalyzer.h`, then select both functions.
@@ -25,7 +43,8 @@ LabVIEW version and camera pipeline before instrument use.
 
 ## Manual Call Library Function Node configuration
 
-Set the library path to the x64 DLL, select the exact undecorated function name,
+Set the library path to the x86 DLL for 32-bit LabVIEW (x64 for 64-bit LabVIEW),
+select the exact undecorated function name,
 and choose **C / cdecl**, not stdcall. All return values are **Signed 32-bit
 Integer (I32)**, passed by value. API version takes no arguments and returns 1.
 
@@ -118,15 +137,37 @@ effective image sharpness, not guaranteed intrinsic optical finesse.
 
 ## Diagnose loading and calls
 
-- First call `FP_GetApiVersion`; expect 1. Then use a known synthetic ring
-  frame before testing camera images. `examples/python_ctypes_test.py` supplies
-  an independent cdecl loader and numerical check on the same DLL.
+- First create a node for `FP_GetApiVersion`: C / cdecl, no parameters, I32
+  return by value. Run it and expect **1** in both architectures. API version
+  stays 1 because the function signatures and numerical contract are unchanged.
+- Next test `FP_AnalyzeFrameU8` with a 32×32 all-zero U8 input, a separate
+  1024-element U8 crop filled with a known sentinel, ROI I32[3] and metrics
+  DBL[4]. Supply width=32, height=32, capacity=1024. Expect status **-3**, zero
+  ROI, NaN metrics and an untouched crop. This tests the array configuration
+  without requiring detectable rings.
+- Then use a known synthetic ring frame before testing camera images. On
+  success check ROI bounds, compare each cropped pixel to
+  `input[(y+top)*width+x+left]`, and display only the first `size*size` crop
+  elements. `examples/python_ctypes_test.py` supplies an independent cdecl
+  loader and synthetic numerical/crop check on the same DLL. Run it with
+  **x86 Python for the x86 DLL**, or x64 Python for the x64 DLL. Python is not
+  required by the DLL or LabVIEW application.
 - A missing dependency or bitness mismatch can look like “DLL not found” even
-  when the DLL path is correct. Check x64 LabVIEW, x64 DLL, the MSVC runtime and
-  `dumpbin /dependents`. No Python installation is needed on the instrument PC.
+  when the DLL path is correct. In a Visual Studio Developer Command Prompt,
+  run `dumpbin /headers FPAnalyzer.dll`: machine **14C (x86)** must match 32-bit
+  LabVIEW; **8664 (x64)** must match 64-bit LabVIEW. Windows error 193 commonly
+  indicates a wrong-architecture binary. Run `dumpbin /dependents FPAnalyzer.dll`
+  to list runtime imports (such as VCRUNTIME140.dll and MSVCP140.dll), then
+  install or repair the matching Microsoft Redistributable if dependencies
+  are missing. Error 126 can mean a dependency is missing rather than the
+  analyzer DLL itself. No Python installation is needed on the instrument PC.
 - `dumpbin /exports` should list exactly `FP_GetApiVersion` and
   `FP_AnalyzeFrameU8`. Decorated or additional C++ entry points indicate the
   wrong build or configuration.
+- A 32-bit process has a smaller address space. Keep frames and buffers within
+  available process memory; the signed-I32 pixel-count limit is an API bound,
+  not a promise that such a large frame can be allocated. Native allocation
+  failures remain contained as status -4 with the existing validity rules.
 - An access violation usually indicates wrong pointer/handle mode, undersized
   arrays, incorrect element type, or a wrong function prototype. The DLL cannot
   protect against invalid addresses or allocations smaller than declared.
