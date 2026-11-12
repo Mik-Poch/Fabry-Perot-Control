@@ -1,7 +1,8 @@
 # Validation record
 
-Recorded during implementation on 2026-11-12. These results describe the local
-Linux development build, **not** a Windows/MSVC or LabVIEW execution.
+Recorded during implementation on 2026-11-12. Local measurements below describe
+the Linux development build. The Windows CI outcome is recorded separately;
+no LabVIEW execution has been performed.
 
 ## Environment and commands
 
@@ -26,7 +27,7 @@ Linux development build, **not** a Windows/MSVC or LabVIEW execution.
 | Optional real camera frames | skipped; no frames supplied |
 | Linux dynamic symbol inspection | exactly the two API names exported |
 | Install layout / installed-library ctypes | passed |
-| Windows x64 / MSVC build and DLL exports | workflow supplied; remote run not yet verified |
+| Windows x64 / MSVC build, C++/C/ctypes tests and DLL exports | passed in Actions run 43308997904, source commit 25ba4a1 |
 | LabVIEW Import Wizard / live Call Library Function Node | not executed |
 
 Synthetic frames include rectangular/portrait/square images, a localized small
@@ -61,12 +62,22 @@ consecutive calls. Earlier runs in the same shared cloud ranged approximately
 51–91 ms. This is a measured development observation, not a real-time bound or
 a prediction of Windows/instrument performance. CI prints its own timing.
 
-## Remaining external validation
+## Windows CI and remaining external validation
 
 The Windows Actions workflow builds Release with Visual Studio 2022 x64,
 executes the C++, C ABI and ctypes tests, checks `dumpbin /exports`, and uploads
-the DLL/header only on success. Read that run's outcome before distributing a
-Windows binary. API access was blocked by the cloud egress proxy (CONNECT 403)
-during this session; adding `api.github.com` was saved in the environment draft
-but does not itself apply access or run CI. A successful Linux test is not a
-substitute for MSVC, real-camera or LabVIEW validation.
+the DLL/header only on success. [Run 43308997904](https://github.com/Mik-Poch/Fabry-Perot-Control/actions/runs/43308997904)
+for source commit `25ba4a1` completed **successfully**. The public Actions page
+confirmed its conclusion and published `FPAnalyzer-windows-x64` and
+`FPAnalyzer-test-report` artifacts. Thus the compiled Windows DLL also passed
+the independent Python ctypes loader/numerical test and the exact MSVC export
+check. The public page requires sign-in to read detailed logs/download artifacts;
+no separate Windows performance number is asserted here.
+
+Creating the pull request through `gh pr create` was blocked by the cloud egress
+proxy on `api.github.com/graphql` (Forbidden; independent API CONNECT probe 403).
+Adding `api.github.com` was saved in the environment draft but has not been
+applied. Both the empty initial `main` base and the implementation feature branch
+were pushed successfully through normal Git authentication. This networking
+limitation did not prevent viewing the successful CI outcome via github.com.
+Real-camera accuracy and actual LabVIEW calls still require external validation.
