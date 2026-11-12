@@ -1,0 +1,4 @@
+LIBRARY FPAnalyzer
+EXPORTS
+    FP_GetApiVersion
+    FP_AnalyzeFrameU8
