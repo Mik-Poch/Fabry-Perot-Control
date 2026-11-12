@@ -143,3 +143,73 @@ the repository contains no real camera frames for CI either.
 Actual 32-bit LabVIEW calls on Windows 11 and camera/instrument validation
 remain unexecuted. See `docs/labview_integration.md` for artifact selection,
 runtime dependencies and initial Call Library Function Node checks.
+
+## Native U16 interface
+
+The U16 extension starts from `ccd464a82e9b07e402526f4681ea99d9442b0195` on
+`feat/fp-analyzer-v0.1`. Implementation commit
+`55163954a18ed1c508a7e93e02d43b4d3531c11f` adds `FP_AnalyzeFrameU16`, preserving
+the U8 entry point, cdecl ABI and API-version result 1. The earlier sections
+describe historical two-export DLLs; the U16-capable DLL has three exports.
+
+### Precision and compatibility checks
+
+One templated numerical implementation handles U8 and U16 through typed
+double-precision views. U8 retains its original thresholds. U16 uses an exact
+65536-bin histogram to derive a per-frame affine intensity scale (1st–99th
+percentile span, full-range fallback for a zero span). The view subtracts the
+lower percentile and scales the span to 200 analysis units without clipping,
+rounding or conversion to U8. This adapts intensity floors to observed contrast
+without assuming the camera's effective bit depth. Cropped U16 samples are
+copied from the source unchanged. Phase, center and finesse definitions and
+the numerical methods remain unchanged.
+
+Native tests cover direct 8-/10-/12-/14-/16-bit synthetic generation, exact
+crop samples above 255 and at 0/65535, a 40000-level background with only
+64 levels of ring contrast (every pixel has the same high byte), portrait and
+localized patterns, phase wrap, linewidth/finesse response, and pure noise.
+Capacity/invalid-input tests cover zero, one-element-short and exact U16
+element counts, canaries, byte-range overlap checks, nulls and dimension
+overflow. Failure cases check the original ROI/crop/NaN validity rules.
+
+Equivalent U8 data scaled into U16 by gains 1, 4, 16, 64 and 257 must agree
+within 0.1 pixel in global center, 0.005 cycle in circular phase and 5% in
+finesse proxy. Noiseless U16 frames also retain the original ground-truth
+limits of 0.7 pixel and 0.025 cycle. These are synthetic validation tolerances,
+not a claim of calibration or accuracy for an arbitrary camera.
+
+### Executed builds and distribution
+
+[Push run 43329319743](https://github.com/Mik-Poch/Fabry-Perot-Control/actions/runs/43329319743)
+for implementation commit `5516395` completed **successfully**, as did
+[PR #1 run 43329326339](https://github.com/Mik-Poch/Fabry-Perot-Control/actions/runs/43329326339).
+The public run summaries confirm success and the four uploaded artifacts.
+
+| Check | Win32 / x86 | x64 |
+| --- | --- | --- |
+| Visual Studio 2022 Release build | passed | passed |
+| Original U8 and new U16 native suites | passed | passed |
+| Standard C99 header and U8/U16 ABI calls | passed | passed |
+| Simplified LabVIEW header compiled as C and called | passed | passed |
+| Architecture-matched Python 3.12 ctypes U8/U16 tests | passed | passed |
+| `dumpbin /headers` architecture check | passed (14C) | passed (8664) |
+| `dumpbin /exports` exact three undecorated names | passed | passed |
+| DLL and both headers uploaded | `FPAnalyzer-windows-x86` | `FPAnalyzer-windows-x64` |
+
+The exact exports are `FP_GetApiVersion`, `FP_AnalyzeFrameU8` and
+`FP_AnalyzeFrameU16`. Artifacts contain `bin/FPAnalyzer.dll`,
+`include/FPAnalyzer.h` and `include/FPAnalyzer_LabVIEW.h`. The latter is the
+simple C declaration file intended for the LabVIEW Import Shared Library
+Wizard. Compiling/calling it from C is an ABI test, not an actual Wizard test.
+
+Local Linux Release checks passed (5 CTest tests, including all 6 U8 native
+groups and all 3 new U16 groups). Debug ASan/UBSan checks passed (4 CTest tests)
+without sanitizer diagnostics. The optional real-camera test was skipped in
+both runs because no frames were provided. Installing the library and both
+headers succeeded; ctypes loaded the installed library and passed both APIs.
+Linux symbol inspection confirmed exactly the three intended exports.
+
+Detailed Actions logs and artifact downloads require GitHub sign-in. Windows
+results above are supported by successful runs of the committed workflow and
+its public artifact summaries; they are not inferred from Linux tests.
+Actual LabVIEW calls and real-camera validation remain unexecuted.
