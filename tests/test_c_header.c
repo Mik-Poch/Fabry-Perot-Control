@@ -15,5 +15,9 @@ int main(void) {
     if (FP_AnalyzeFrameU16(image,32,32,manual,crop,32*32,roi,metrics)!=FP_INSUFFICIENT_RINGS) return 5;
     for (i=0;i<3;++i) if (roi[i]!=manual[i]) return 6;
     for (i=0;i<4;++i) if (!isnan(metrics[i])) return 7;
+    if (FP_AnalyzeFrameU16WithMethod(image,32,32,manual,99,crop,32*32,roi,metrics)!=FP_INVALID_METHOD) return 8;
+    for (i=0;i<3;++i) if (roi[i]!=0) return 9;
+    for (i=0;i<4;++i) if (!isnan(metrics[i])) return 10;
+    if (FP_AnalyzeFrameU16WithMethod(image,32,32,manual,1,crop,32*32,roi,metrics)!=FP_INSUFFICIENT_RINGS) return 11;
     return 0;
 }

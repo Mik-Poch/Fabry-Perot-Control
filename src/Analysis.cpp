@@ -136,14 +136,30 @@ bool detectRoi(PixelView pixels, int width, int height, Roi& roi) {
 
 bool estimateCenter(PixelView pixels, int size, Center& center) {
     if (size < 24) return false;
-    std::vector<double> input(static_cast<std::size_t>(size)*size);
-    for (std::size_t i = 0; i < input.size(); ++i) input[i] = pixels[i];
-    const auto blurred = smooth(smooth(input, size, size), size, size);
+    // Same two separable filters and operation order as v2, with two reusable
+    // buffers instead of materializing the normalized input and four work images.
+    const auto count=static_cast<std::size_t>(size)*size;
+    std::vector<double> tmp(count), blurred(count);
+    for (int pass=0;pass<2;++pass) {
+        for(int y=0;y<size;++y) for(int x=0;x<size;++x) {
+            const auto i=static_cast<std::size_t>(y)*size+x;
+            const auto l=static_cast<std::size_t>(y)*size+std::max(0,x-1);
+            const auto r=static_cast<std::size_t>(y)*size+std::min(size-1,x+1);
+            tmp[i]=pass==0 ? (pixels[l]+2*pixels[i]+pixels[r])/4 : (blurred[l]+2*blurred[i]+blurred[r])/4;
+        }
+        for(int y=0;y<size;++y) for(int x=0;x<size;++x) {
+            const auto i=static_cast<std::size_t>(y)*size+x;
+            blurred[i]=(tmp[static_cast<std::size_t>(std::max(0,y-1))*size+x]+
+                2*tmp[i]+tmp[static_cast<std::size_t>(std::min(size-1,y+1))*size+x])/4;
+        }
+    }
     struct Gradient { double x, y, nx, ny, magnitude; };
     std::vector<Gradient> gradients;
     std::vector<double> magnitudes;
     // Bound fitting cost for high-resolution frames without changing geometry.
     const int stride = std::max(1,size/600);
+    gradients.reserve(count/(stride*stride));
+    magnitudes.reserve(count/(stride*stride));
     for (int y = 2; y < size-2; y += stride) for (int x = 2; x < size-2; x += stride) {
         const auto i = static_cast<std::size_t>(y)*size+x;
         const double gx = (blurred[i+1]-blurred[i-1])/2;
@@ -154,25 +170,35 @@ bool estimateCenter(PixelView pixels, int size, Center& center) {
             magnitudes.push_back(m);
         }
     }
+    // The image workspaces are no longer needed during the robust fit.
+    std::vector<double>().swap(tmp);
+    std::vector<double>().swap(blurred);
     if (gradients.size() < 100) return false;
-    const double high = quantile(magnitudes,0.90);
+    const double high = quantile(std::move(magnitudes),0.90);
     const double cutoff = std::max(0.3, high*0.30);
     if (high < 0.4) return false;
+    struct FitGradient { double x,y,nx,ny,rhs,weight; };
+    std::vector<FitGradient> fit;
+    fit.reserve(gradients.size());
+    for(const auto& g:gradients) if(g.magnitude>=cutoff) {
+        const double capped=std::min(g.magnitude,high);
+        fit.push_back({g.x,g.y,g.nx,g.ny,g.nx*g.x+g.ny*g.y,capped*capped});
+    }
+    std::vector<Gradient>().swap(gradients);
     center = {(size-1)/2.0,(size-1)/2.0};
     for (int iteration = 0; iteration < 8; ++iteration) {
         double a = 0,b = 0,d = 0,u = 0,v = 0,total = 0, good = 0;
         const double tolerance = std::max(1.5, size*(iteration < 3 ? 0.06 : 0.015));
-        for (const auto& g : gradients) {
-            if (g.magnitude < cutoff) continue;
+        for (const auto& g : fit) {
             const double residual = g.nx*(center.x-g.x) + g.ny*(center.y-g.y);
-            double weight = std::pow(std::min(g.magnitude,high),2);
+            double weight = g.weight;
             total += weight;
             if (iteration > 0) {
                 const double t = residual/tolerance;
                 weight /= (1+t*t)*(1+t*t);
             }
             good += weight;
-            const double rhs = g.nx*g.x+g.ny*g.y;
+            const double rhs = g.rhs;
             a += weight*g.nx*g.nx; b += weight*g.nx*g.ny; d += weight*g.ny*g.ny;
             u += weight*g.nx*rhs; v += weight*g.ny*rhs;
         }
@@ -186,7 +212,7 @@ bool estimateCenter(PixelView pixels, int size, Center& center) {
     return true;
 }
 
-Profile radialProfile(PixelView pixels, int size, const Center& center) {
+Profile radialProfile(PixelView pixels, int size, const Center& center, int stride) {
     // Only complete circles: edge truncation must not bias peak intensity/width.
     const double radius = std::min({center.x,center.y,size-1-center.x,size-1-center.y})-1;
     Profile result;
@@ -195,7 +221,7 @@ Profile radialProfile(PixelView pixels, int size, const Center& center) {
     result.step = std::max(1.0,maxQ/4096.0);
     const int bins = static_cast<int>(std::floor(maxQ/result.step))+1;
     std::vector<double> sums(bins,0), counts(bins,0);
-    for (int y = 0; y < size; ++y) for (int x = 0; x < size; ++x) {
+    for (int y = 0; y < size; y+=stride) for (int x = 0; x < size; x+=stride) {
         const double dx = x-center.x,dy = y-center.y;
         const double q = (dx*dx+dy*dy)/result.step;
         if (q >= bins-1) continue;
@@ -216,7 +242,7 @@ Profile radialProfile(PixelView pixels, int size, const Center& center) {
     return result;
 }
 
-bool measureProfile(const Profile& profile, Measurement& result) {
+bool measureProfile(const Profile& profile, Measurement& result, ProfileFit* fit) {
     const auto& p = profile.intensity;
     const int n = static_cast<int>(p.size());
     if (n < 32 || profile.step <= 0) return false;
@@ -288,6 +314,11 @@ bool measureProfile(const Profile& profile, Measurement& result) {
         if (width >= 2*profile.step && width < 0.8*spacing) widths.push_back(width);
     }
     if (widths.size() < 2) return false;
+    result.spacing = spacing;
+    if (fit) {
+        fit->peakQ.clear();
+        for (std::size_t k=first;k<=last;++k) fit->peakQ.push_back(peaks[k].q);
+    }
     result.phase = -intercept/spacing;
     result.phase -= std::floor(result.phase);
     if (result.phase >= 1) result.phase = 0;

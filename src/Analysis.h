@@ -11,7 +11,7 @@ struct Profile {
     double step = 1;
     std::vector<double> intensity;
 };
-struct Measurement { double phase = 0; double finesse = 0; };
+struct Measurement { double phase = 0; double finesse = 0; double spacing = 0; };
 
 // Analysis-only affine intensity view. Samples remain double precision;
 // caller-owned pixels and the returned crop are never rescaled.
@@ -25,8 +25,9 @@ struct PixelView {
 PixelView analysisView(const unsigned short* p, std::size_t count);
 bool detectRoi(PixelView pixels, int width, int height, Roi& roi);
 bool estimateCenter(PixelView pixels, int size, Center& center);
-Profile radialProfile(PixelView pixels, int size, const Center& center);
+Profile radialProfile(PixelView pixels, int size, const Center& center, int stride = 1);
 
-bool measureProfile(const Profile& profile, Measurement& result);
+struct ProfileFit { std::vector<double> peakQ; };
+bool measureProfile(const Profile& profile, Measurement& result, ProfileFit* fit = nullptr);
 } // namespace fp
 #endif

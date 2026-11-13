@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(FPAnalyzer VERSION 0.1.0 LANGUAGES C CXX)
+project(FPAnalyzer VERSION 0.3.0 LANGUAGES C CXX)
 
 if(WIN32 AND NOT MSVC)
     message(FATAL_ERROR "Use Microsoft Visual C++ for the Windows DLL")
@@ -19,9 +19,9 @@ if(FP_ENABLE_SANITIZERS)
     add_link_options(-fsanitize=address,undefined)
 endif()
 
-add_library(fp_core STATIC src/Analysis.cpp)
+add_library(fp_core STATIC src/Analysis.cpp src/Pipeline.cpp src/Methods.cpp)
 set_target_properties(fp_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
-target_include_directories(fp_core PUBLIC src)
+target_include_directories(fp_core PUBLIC src PRIVATE include)
 target_compile_features(fp_core PUBLIC cxx_std_17)
 
 add_library(FPAnalyzer SHARED src/FPAnalyzer.cpp)
@@ -66,6 +66,25 @@ if(BUILD_TESTING)
     target_include_directories(fp_roi_benchmark PRIVATE tests)
     target_compile_features(fp_roi_benchmark PRIVATE cxx_std_17)
     add_test(NAME roi_benchmark COMMAND fp_roi_benchmark)
+
+    add_executable(fp_methods_benchmark tests/benchmark_methods.cpp)
+    target_link_libraries(fp_methods_benchmark PRIVATE FPAnalyzer fp_core)
+    target_include_directories(fp_methods_benchmark PRIVATE tests)
+    # Timed Release measurements run explicitly in CI; avoid sanitizer timings.
+    if(NOT FP_ENABLE_SANITIZERS)
+        add_test(NAME methods_benchmark COMMAND fp_methods_benchmark 21 "${CMAKE_CURRENT_BINARY_DIR}/methods_benchmark.csv")
+    endif()
+
+    add_executable(fp_b_compare tests/benchmark_b_regression.cpp)
+    target_link_libraries(fp_b_compare PRIVATE FPAnalyzer ${CMAKE_DL_LIBS})
+    target_include_directories(fp_b_compare PRIVATE tests)
+    target_compile_features(fp_b_compare PRIVATE cxx_std_17)
+
+    find_package(Threads REQUIRED)
+    add_executable(fp_method_tests tests/test_methods.cpp)
+    target_link_libraries(fp_method_tests PRIVATE FPAnalyzer fp_core Threads::Threads)
+    target_include_directories(fp_method_tests PRIVATE tests)
+    add_test(NAME methods COMMAND fp_method_tests)
 
     add_executable(fp_c_api_test tests/test_c_header.c)
     target_link_libraries(fp_c_api_test PRIVATE FPAnalyzer)

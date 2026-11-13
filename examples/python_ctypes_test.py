@@ -139,6 +139,51 @@ def boundaries(call):
     print("PASS ctypes: boundary ROI, U16 endpoints and failure outputs")
 
 
+def test_selector(dll):
+    call = dll.FP_AnalyzeFrameU16WithMethod
+    call.argtypes = [ct.POINTER(ct.c_ushort), ct.c_int, ct.c_int, ct.POINTER(ct.c_int),
+                     ct.c_int, ct.POINTER(ct.c_ushort), ct.c_int,
+                     ct.POINTER(ct.c_int), ct.POINTER(ct.c_double)]
+    call.restype = ct.c_int
+    width, height = 384, 320
+    image = frame(width, height, 50000, 1000)
+    capacity = min(width, height)**2
+    crop = (ct.c_ushort*(capacity+2))(*([SENTINEL]*(capacity+2)))
+    output = ct.cast(ct.byref(crop, 2), ct.POINTER(ct.c_ushort))
+    roi, metrics = RoiGuard(123, (ct.c_int*3)(), 456), MetricsGuard(123, (ct.c_double*4)(), 456)
+    for method in range(4):
+        require(call(image, width, height, AUTO, method, output, capacity, roi.values, metrics.values) == 0,
+                f"method {method} auto")
+        selected = (ct.c_int*3)(*roi.values)
+        automatic_metrics = list(metrics.values)
+        require(call(image, width, height, selected, method, output, capacity, roi.values, metrics.values) == 0,
+                f"method {method} manual")
+        require(list(metrics.values) == automatic_metrics, "method auto/manual equivalence")
+        require(abs(metrics.values[1]+roi.values[0]-185.35) < .7 and
+                abs(metrics.values[2]+roi.values[1]-162.7) < .7, "all method center truth")
+        require(abs(math.remainder(metrics.values[0]-.73, 1)) < .03 and metrics.values[3] > 1,
+                "all method phase/finesse")
+        count = roi.values[2]**2
+        for y in range(roi.values[2]):
+            require(list(crop[1+y*roi.values[2]:1+(y+1)*roi.values[2]]) ==
+                    list(image[(y+roi.values[1])*width+roi.values[0]:
+                               (y+roi.values[1])*width+roi.values[0]+roi.values[2]]), "all method exact crop")
+        require(crop[0] == crop[-1] == SENTINEL and roi.before == metrics.before == 123 and
+                roi.after == metrics.after == 456, "all method output canaries")
+        if method == 1:
+            legacy = wrapper(dll.FP_AnalyzeFrameU16, image, width, height, list(selected))
+            require(legacy[3] == 0 and legacy[2] == automatic_metrics, "new method B equals preserved ABI")
+        require(call(image, width, height, selected, method, output, count-1, roi.values, metrics.values) == -2,
+                "all method capacity error")
+        require(all(math.isnan(v) for v in metrics.values), "no measurements on failure")
+    for method in (-1, 4, 2**31-1):
+        require(call(image, width, height, AUTO, method, output, capacity, roi.values, metrics.values) == -5,
+                "invalid method status")
+        require(list(roi.values) == [0, 0, 0] and all(math.isnan(v) for v in metrics.values),
+                "invalid method outputs")
+    print("PASS ctypes: four methods, preserved method B, invalid selector and output guards")
+
+
 def main():
     if len(sys.argv) != 2:
         raise SystemExit("Usage: python python_ctypes_test.py /path/to/FPAnalyzer.dll")
@@ -159,6 +204,7 @@ def main():
     call.restype = ct.c_int
     test_u16(call)
     boundaries(call)
+    test_selector(dll)
 
 
 if __name__ == "__main__":

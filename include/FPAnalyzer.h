@@ -10,7 +10,8 @@ enum {
     FP_INVALID_ARGUMENT = -1,
     FP_INSUFFICIENT_CAPACITY = -2,
     FP_NO_FRINGE_REGION = -3,
-    FP_INSUFFICIENT_RINGS = -4
+    FP_INSUFFICIENT_RINGS = -4,
+    FP_INVALID_METHOD = -5
 };
 
 int FP_GetApiVersion(void);
@@ -48,6 +49,24 @@ int FP_AnalyzeFrameU16(
     int image_width,
     int image_height,
     const int roi_in[3],
+    unsigned short cropped_pixels[],
+    int cropped_capacity_pixels,
+    int roi_out[3],
+    double metrics_out[4]);
+
+/* Additive feature-generation v3 entry point; ABI version remains 2 so existing
+ * version==2 callers keep working. Detect this symbol to discover selectors.
+ * Same storage/ROI/status contract as FP_AnalyzeFrameU16; analysis_method:
+ * 0 opposite-spoke correlation, 1 radial reference, 2 2D Airy fit, 3 sectors.
+ * Invalid selector returns -5, ROI zero, crop untouched, metrics NaN.
+ * Numerical failure returns -4; no silent substitution of another method.
+ */
+int FP_AnalyzeFrameU16WithMethod(
+    const unsigned short image_pixels[],
+    int image_width,
+    int image_height,
+    const int roi_in[3],
+    int analysis_method,
     unsigned short cropped_pixels[],
     int cropped_capacity_pixels,
     int roi_out[3],

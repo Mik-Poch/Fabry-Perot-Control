@@ -1,18 +1,36 @@
-# FPAnalyzer 0.1 — API v2
+# FPAnalyzer v3 — four analysis methods, compatible ABI v2
 
 Single-frame Fabry–Pérot fringe analysis for **Windows Win32/x86 (primary,
 32-bit LabVIEW)** and x64, MSVC 2022, C++17. The DLL uses only the C++ standard
 library. No Python, OpenCV, GPU or LabVIEW runtime is required by the DLL.
 No actuator control, frame history, absolute calibration or A/B/C/D methods.
 
-## Breaking change: API version 2
+## Compatibility and method selection
 
-`FP_GetApiVersion()` now returns **2**. `FP_AnalyzeFrameU8` has been removed.
-`FP_AnalyzeFrameU16` has a new fourth argument, `roi_in`, so old callers must
-update/reimport their binding before loading this DLL. Do not call v2 with a
-v1 prototype. The permanent public files remain **FPAnalyzer.dll** and
-**FPAnalyzer.h**. The header retains its proven simplified plain C format;
-exports/cdecl remain internal to the implementation and `.def` file.
+This feature release preserves **FP_AnalyzeFrameU16 exactly**: same signature,
+method B, ROI handling, output lengths and status meanings. **FP_GetApiVersion
+still returns 2**, so existing `version == 2` checks and working LabVIEW callers
+continue to work. Version is the ABI compatibility generation; v3 names this
+feature release. To discover the additive selector, resolve the new export
+`FP_AnalyzeFrameU16WithMethod` (`GetProcAddress`/ctypes attribute), or use an
+artifact from this release. Version 2 alone cannot distinguish older builds.
+
+| ID | Method | Implementation / role |
+| --- | --- | --- |
+| 0 | A — opposite-spoke correlation | Eight sampled spokes, four signed opposite-pair lags, subpixel refinement; sparse radial profile for all four metrics. Fast candidate, no full-image gradient center fit. |
+| 1 | B — circle center and radial profile | Existing robust center, squared-radius profile, peaks, phase and FWHM; optimized buffers and repeated fit terms. Original function always uses this method. |
+| 2 | C — 2D Airy fit | Radial initialization, bounded robust Levenberg–Marquardt over sampled 2D pixels, background plane and illumination slopes, convergence/quality rejection. |
+| 3 | D — angular sectors | Radial initialization, eight independent sector profiles; robust joint peak-order/center/phase fit with periodicity handled by integer orders. At least five valid sectors. |
+
+All paths use the same crop and phase convention; a selected algorithm's failure
+returns -4 with NaNs, **never another method's results**. Invalid method returns
+-5. C/D use B only as an initializer. No method is assumed best on every image.
+See [algorithms, accuracy and measured performance](docs/methods_and_performance.md)
+for equations, limits, before/after B comparisons and complete four-metric timing.
+No camera images were supplied; synthetic results are not real-camera accuracy.
+
+U8 was removed in ABI v2 and remains absent. The permanent public files are
+**FPAnalyzer.dll** and **FPAnalyzer.h**, a single simplified plain C header.
 
 ## DLL versus the LabVIEW wrapper
 
@@ -22,7 +40,9 @@ The user-facing **FP Analyze Frame U16.vi** has exactly four inputs:
 It returns `cropped_pixels` (1D U16), `roi_out` (exactly 3 I32),
 `metrics_out` (exactly 4 DBL), and `status` (I32).
 
-The low-level DLL uses caller-owned buffers for safe memory handling:
+The original wrapper remains unchanged. A selector wrapper named
+**FP Analyze Frame U16 With Method.vi** adds only `analysis_method` (I32) as a
+fifth input; it has the same four outputs. The DLL uses caller-owned buffers:
 
 ```c
 int FP_GetApiVersion(void);
@@ -35,6 +55,11 @@ int FP_AnalyzeFrameU16(
     int cropped_capacity_pixels,
     int roi_out[3],
     double metrics_out[4]);
+int FP_AnalyzeFrameU16WithMethod(
+    const unsigned short image_pixels[], int image_width, int image_height,
+    const int roi_in[3], int analysis_method,
+    unsigned short cropped_pixels[], int cropped_capacity_pixels,
+    int roi_out[3], double metrics_out[4]);
 ```
 
 The wrapper allocates buffers and computes capacity internally; capacity is
@@ -88,6 +113,7 @@ for numerical analysis (center estimation requires at least 24×24).
 | -2 insufficient capacity | valid, required capacity = size² | untouched | four NaNs |
 | -3 no fringe region (auto only) | zero | untouched | four NaNs |
 | -4 insufficient measurement/resources | valid if size > 0 | valid if size > 0 | four NaNs |
+| -5 invalid method (selector only) | zero | untouched | four NaNs |
 
 Non-null ROI/metrics buffers are initialized even when another argument is
 invalid. Detected overlap is rejected before any writes, leaving outputs
@@ -102,7 +128,8 @@ matching Python for ctypes, tests the compiled DLL, verifies exact exports and
 packages only `bin/FPAnalyzer.dll` and `include/FPAnalyzer.h`. Download
 **FPAnalyzer-windows-x86** for 32-bit LabVIEW or **FPAnalyzer-windows-x64** for
 64-bit LabVIEW from the successful run for the desired commit. Test reports
-include separate auto/manual benchmarks. Match LabVIEW's bitness, not Windows'.
+include per-method accuracy rows and methods_benchmark.csv with native/stage
+median, p95, min/max and success/failure counts for each architecture. Match LabVIEW's bitness, not Windows'.
 Install the matching Microsoft Visual C++ 2015–2022 Redistributable if needed.
 
 Install Visual Studio 2022 / Build Tools with Desktop development with C++,
@@ -119,7 +146,7 @@ cmake -DPROJECT_DIR=. -DPACKAGE_DIR=package-x86 -P tests/check_public_header.cma
 
 For x64 select x64 Python and use `-A x64` with separate build/package folders.
 `dumpbin /exports` must show exactly `FP_GetApiVersion` and
-`FP_AnalyzeFrameU16`, undecorated. C callers include `FPAnalyzer.h` directly;
+`FP_AnalyzeFrameU16` and `FP_AnalyzeFrameU16WithMethod`, undecorated. C callers include `FPAnalyzer.h` directly;
 C++ callers wrap its include in `extern "C" { ... }` in their own source.
 The public header has no compiler macros or platform conditionals. MSVC uses
 cdecl (`/Gd`); Python uses `ctypes.CDLL`.
@@ -134,6 +161,9 @@ cmake -S . -B build-asan -DCMAKE_BUILD_TYPE=Debug -DFP_ENABLE_SANITIZERS=ON
 cmake --build build-asan --parallel 4
 ctest --test-dir build-asan --output-on-failure
 ./build/fp_roi_benchmark
+./build/fp_methods_benchmark 21 build/methods_benchmark.csv
+# Optional, same-architecture previous library with the original U16 signature:
+./build/fp_b_compare /absolute/path/to/previous/libFPAnalyzer.so
 ```
 
 The Linux library is `build/libFPAnalyzer.so`. Sanitizers exercise native code;
@@ -178,7 +208,7 @@ Phase is a cavity-phase observable modulo one FSR, **not absolute mirror
 separation**. The finesse proxy includes camera PSF, sampling, illumination,
 alignment and noise; it is not claimed to be intrinsic optical finesse.
 
-This v0.1 method assumes a reasonably circular, well-resolved, dominant ring
+The reference radial method assumes a reasonably circular, well-resolved, dominant ring
 pattern on a relatively dark background. The ROI may change by tiles between
 frames; crop-relative centers must be translated using ROI offsets for camera
 coordinates. Strong aberration/ellipticity, competing patterns, obscured centers,
@@ -196,7 +226,8 @@ rejection, insufficient rings, portrait/square/landscape dimensions, modulo-one
 phase and finesse response to broader rings. Core tests also check an analytic
 profile's FWHM against its closed-form value. Checks remain active in Release.
 
-`ctest` runs the native suite, pure C caller and independent Python ctypes
+`ctest` runs original and all-method native suites, concurrency/regression tests,
+the Release method/stage benchmark, pure C caller and independent Python ctypes
 loader. Optional [real-frame tests](data/test_frames/README.md) report **Skipped**
 when no `.pgm` frames are supplied; they are not counted as accuracy validation.
 

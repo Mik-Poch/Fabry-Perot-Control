@@ -1,17 +1,69 @@
-# LabVIEW U16 integration — API v2
+# LabVIEW U16 integration — feature v3, compatible ABI v2
 
 Use **FPAnalyzer.dll** with **FPAnalyzer.h**. These permanent filenames and the
-single simplified plain C header must be preserved. The user has successfully
-imported this header format into 32-bit LabVIEW. The v2 signature below is
-checked by compiled C/C++ ABI and ctypes tests; actual v2 Wizard import, wiring
-and execution have not been performed here. No working `.vi` was generated.
+single simplified plain C header must be preserved. The user reports the existing U16 function working in 32-bit LabVIEW on Windows
+11 64-bit and successful Wizard import of this simplified header format. This
+release preserves that function and adds a selector. The new node is checked by
+compiled C/C++ ABI and ctypes tests; its actual Wizard wiring/execution has not
+been performed here. No `.vi` file was generated or automatically corrected.
 
 Use the **x86/Win32 DLL for 32-bit LabVIEW**, including on 64-bit Windows 11;
 use x64 only for 64-bit LabVIEW. Install the matching Microsoft VC++ 2015–2022
 Redistributable. Never use the old v1 generated node with v2: one argument was
 inserted and U8 was removed. Reimport or edit the complete prototype first.
 
-## Public wrapper connector pane
+## New selectable-method wrapper (five inputs)
+
+Keep **FP Analyze Frame U16.vi** and its four-input connector pane unchanged.
+Create a separate **FP Analyze Frame U16 With Method.vi** with the same image,
+W, H and ROI inputs plus **analysis_method (I32)**. Outputs stay crop U16[1D],
+ROI I32[3], metrics DBL[4] and I32 status. Capacity/allocation remain internal.
+Use enum/ring items 0=A opposite spokes, 1=B radial reference, 2=C 2D Airy,
+3=D angular sectors; default **1** preserves the reference behavior.
+
+Configure its Call Library Function Node for
+`FP_AnalyzeFrameU16WithMethod`, C/cdecl, I32 return by value:
+
+| # | Parameter | Node setting |
+| --- | --- | --- |
+| 1 | image_pixels | 1D U16 Array Data Pointer; at least W*H elements |
+| 2 | image_width | I32, Value |
+| 3 | image_height | I32, Value |
+| 4 | roi_in | 1D I32 Array Data Pointer; minimum size 3 |
+| 5 | analysis_method | I32, Value (not pointer or array) |
+| 6 | cropped_pixels | 1D U16 Array Data Pointer; internally initialized capacity |
+| 7 | cropped_capacity_pixels | I32, Value; internal U16 element count |
+| 8 | roi_out | 1D I32 Array Data Pointer; minimum size constant 3 |
+| 9 | metrics_out | 1D DBL Array Data Pointer; minimum size constant 4 |
+
+Use exactly the allocation, ROI normalization, trimming and error branches
+below; only the selector and parameter numbers differ. `FP_GetApiVersion()`
+continues returning **2**, including for existing equality checks. Discover new
+selector support by looking up `FP_AnalyzeFrameU16WithMethod`; the ABI version
+alone cannot distinguish older v2 DLLs. Never change the original node's
+prototype to insert a selector: choose the new function name on the new node.
+Invalid selectors return **-5**, zero ROI, four NaNs and untouched crop. A valid
+selected method which cannot measure reliably returns -4, with no fallback.
+
+## Correcting the reported 6/8-element result arrays
+
+The DLL writes **exactly three I32 values and four DBL values**. The reported
+6-element ROI and 8-element metrics point to LabVIEW allocation/wiring (for
+example preallocated lengths or concatenated results), not extra native output.
+Without the actual VI we cannot identify which wire caused the doubling.
+Do not make the DLL write 6/8, or alter the C element types to compensate.
+
+Probe Array Size immediately after each Initialize Array, immediately after
+the node, and at the wrapper output. This shows where an oversized array is
+introduced. Initialize separate **I32[3]** and **DBL[4]** buffers on every call;
+configure minimum sizes as constants **3** and **4**; remove shared crop/image
+size expressions and any Build Array/Concatenate combining old and new results.
+Minimum size is a lower bound: it does **not shrink** an incoming 6/8 array.
+Use direct result wires to the indicators (or an explicit Array Subset index 0,
+length 3/4 at a compatibility-wrapper boundary). Confirm exact sizes on every
+success/error path. No C notation or import alone proves that the VI is fixed.
+
+## Public original-wrapper connector pane
 
 Create **FP Analyze Frame U16.vi** with exactly these terminals:
 
@@ -153,6 +205,7 @@ optical finesse or absolute cavity displacement.
 | -2 | insufficient capacity; valid retry geometry, NaN metrics, crop untouched |
 | -3 | auto could not find a region; zero ROI, NaN metrics, crop untouched |
 | -4 | insufficient reliable rings/resource failure; NaN metrics; positive size means diagnostic crop is valid, otherwise no crop |
+| -5 | invalid method on the selector only; zero ROI, NaN metrics, no crop |
 
 Detected overlapping storage returns -1 before any output initialization;
 outputs are invalid in this case. The wrapper must always use separate arrays.
@@ -161,7 +214,7 @@ Never use NaNs or measurements from a failed call for instrument control.
 ## Manual LabVIEW verification checklist
 
 1. Call `FP_GetApiVersion` with no arguments and I32 return: expect **2**.
-   Check `dumpbin /exports` shows exactly the two functions in the header and
+   Check `dumpbin /exports` shows exactly the three functions in the header and
    `/headers` shows 14C for x86 or 8664 for x64. A bitness mismatch can appear
    as load error 193; a missing MSVC runtime as error 126.
 2. Reimport/edit the U16 node with the new fourth argument. Verify U16 pointers,
@@ -185,3 +238,28 @@ signature and reference allocation/trim flow, including empty ROI conversion.
 It is an executable reference for the wiring, not proof of LabVIEW execution.
 Run it with Python matching the DLL's architecture; Python is not required on
 the instrument PC. Real camera accuracy and LabVIEW verification remain manual.
+
+## Threading and meaningful timing on the instrument
+
+Native concurrent tests run A/B/C/D calls simultaneously with separate output
+and ROI buffers and shared read-only input; results match sequential calls.
+All scratch memory and diagnostics are per call, without mutable global/history
+state. Set the nodes to **Run in any thread**. The caller must keep arrays alive
+until return, avoid overlapping input/output storage, and use separate buffers
+for concurrent nodes. Actual LabVIEW threading remains an instrument check.
+
+To measure on the user's machine, preallocate arrays and normalize ROI before
+the measured loop. Time only the node with a high-resolution timer and dataflow
+or sequence dependencies forcing the start/stop around it. Warm up, collect
+many calls and compute median and p95. Node timing can still include LabVIEW
+marshalling/copies. Separately time buffer allocation, acquisition, array subset/
+reshape and display updates, placing front-panel refresh outside the timed node
+loop. Reuse buffers in shift registers and check LabVIEW's buffer-allocation
+visualization for unexpected copies; retain the exact crop/metadata contracts.
+
+Run the native Release fp_methods_benchmark on that same computer with identical
+frame/ROI to measure DLL processing separately. Compare original and selector
+method 1; compare manual with auto to measure detection overhead. Do not infer
+native speed from the user's earlier approximately 50 ms manual / 60 ms auto
+LabVIEW observations, or compare this cloud's numbers to instrument timings as
+an optimization ratio. See methods_and_performance.md for raw reports and limits.

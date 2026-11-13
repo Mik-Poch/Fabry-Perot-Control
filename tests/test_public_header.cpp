@@ -8,6 +8,8 @@ extern "C" {
 // These checks use only the public declarations: no private build definitions.
 using Version = int (*)();
 using AnalyzeU16 = int (*)(const unsigned short*, int, int, const int*, unsigned short*, int, int*, double*);
+using WithMethod = int (*)(const unsigned short*, int, int, const int*, int, unsigned short*, int, int*, double*);
+static_assert(std::is_same_v<decltype(&FP_AnalyzeFrameU16WithMethod), WithMethod>);
 static_assert(std::is_same_v<decltype(&FP_GetApiVersion), Version>);
 static_assert(std::is_same_v<decltype(&FP_AnalyzeFrameU16), AnalyzeU16>);
 

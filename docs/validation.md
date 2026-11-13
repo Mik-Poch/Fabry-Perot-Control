@@ -1,3 +1,36 @@
+# Feature v3 / compatible ABI v2 validation — 2026-11-13
+
+The original U16 API, ABI-version result 2 and method B are preserved. The new
+FP_AnalyzeFrameU16WithMethod export adds A/B/C/D selection, invalid-method -5
+and no fallback on failure. The current header has exactly three functions.
+The API v2 section below is historical evidence for the prior two-export build.
+
+See [methods, equations, benchmarks and failure limits](methods_and_performance.md)
+and the raw CSV files in docs/benchmarks. Current Linux Release checks pass
+nine required CTest checks: original analysis/U16, ROI benchmark, all-method and
+stage benchmark, method regression/accuracy/concurrency, C ABI, C++ header ABI,
+public-header contract and Python ctypes. The optional real-frame test skips
+without supplied camera images. Seven native checks passed ASan/UBSan, with no
+diagnostics; timing and Python-host tests are excluded from that configuration.
+
+The before-change B baseline uses a9a0316; six four-metric golden fixtures and
+preserved old/new function equality are exercised. Nineteen comparison fixtures
+per method report 17/19 A successes, 17/19 B, 16/19 C and 15/19 D; rejections of
+degraded inputs are explicit, not replaced with B metrics. All 13 required
+well-formed fixtures pass for every method. The 1280×960 Release benchmark has
+336 successful timed DLL calls and matching per-stage measurements, and records
+median/p95/min/max and failure counts. Interleaved previous/current DLL timings
+measure B optimization on the same machine rather than comparing separate hosts.
+
+Windows Actions is configured to run these checks with architecture-matched
+Python on Win32 and x64, verify the exact three undecorated exports and upload
+FPAnalyzer.dll, FPAnalyzer.h and separate test reports including the stage CSV.
+The outcome for this feature must be read from its Actions run; historical
+Windows success below does not validate this source. LabVIEW selector import,
+actual node execution, 6/8-length wrapper correction, threading and instrument
+performance remain manual checks. User-reported original U16 functionality is
+preserved by the ABI/reference regressions, not a claim of new LabVIEW testing.
+
 # API v2 U16/manual ROI validation — 2026-11-13
 
 This section describes the current API. The entries below `Historical records`
