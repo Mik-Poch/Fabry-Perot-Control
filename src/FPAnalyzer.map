@@ -1,0 +1,4 @@
+{
+    global: FP_GetApiVersion; FP_AnalyzeFrameU16; FP_AnalyzeFrameU16WithMethod;
+    local: *;
+};

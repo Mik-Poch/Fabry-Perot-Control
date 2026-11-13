@@ -1,0 +1,118 @@
+cmake_minimum_required(VERSION 3.20)
+project(FPAnalyzer VERSION 0.3.0 LANGUAGES C CXX)
+
+if(WIN32 AND NOT MSVC)
+    message(FATAL_ERROR "Use Microsoft Visual C++ for the Windows DLL")
+endif()
+if(MSVC)
+    # Plain public C declarations use the C/cdecl default in every caller.
+    add_compile_options(/Gd)
+endif()
+
+include(CTest)
+option(FP_ENABLE_SANITIZERS "Enable AddressSanitizer and UndefinedBehaviorSanitizer (GCC/Clang)" OFF)
+if(FP_ENABLE_SANITIZERS)
+    if(MSVC)
+        message(FATAL_ERROR "Use a GCC/Clang Linux build for the combined sanitizers")
+    endif()
+    add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer)
+    add_link_options(-fsanitize=address,undefined)
+endif()
+
+add_library(fp_core STATIC src/Analysis.cpp src/Pipeline.cpp src/Methods.cpp)
+set_target_properties(fp_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
+target_include_directories(fp_core PUBLIC src PRIVATE include)
+target_compile_features(fp_core PUBLIC cxx_std_17)
+
+add_library(FPAnalyzer SHARED src/FPAnalyzer.cpp)
+target_link_libraries(FPAnalyzer PRIVATE fp_core)
+target_include_directories(FPAnalyzer PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>" "$<INSTALL_INTERFACE:include>")
+set_target_properties(FPAnalyzer PROPERTIES OUTPUT_NAME FPAnalyzer)
+if(WIN32)
+    # Windows export names come solely from the .def file, never the header.
+    target_compile_definitions(FPAnalyzer PRIVATE FP_INTERNAL_EXPORT= FP_INTERNAL_CALL=__cdecl)
+    target_sources(FPAnalyzer PRIVATE src/FPAnalyzer.def)
+else()
+    target_compile_definitions(FPAnalyzer PRIVATE
+        FP_INTERNAL_CALL= "FP_INTERNAL_EXPORT=__attribute__((visibility(\"default\")))")
+endif()
+if(UNIX AND NOT APPLE)
+    target_link_options(FPAnalyzer PRIVATE "LINKER:--version-script=${CMAKE_CURRENT_SOURCE_DIR}/src/FPAnalyzer.map")
+    set_property(TARGET FPAnalyzer APPEND PROPERTY LINK_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/FPAnalyzer.map")
+endif()
+foreach(target fp_core FPAnalyzer)
+    set_target_properties(${target} PROPERTIES CXX_VISIBILITY_PRESET hidden VISIBILITY_INLINES_HIDDEN YES CXX_EXTENSIONS NO)
+    if(MSVC)
+        target_compile_options(${target} PRIVATE /W4 /permissive- /EHsc)
+    else()
+        target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+endforeach()
+
+if(BUILD_TESTING)
+    add_executable(fp_tests tests/test_analysis.cpp)
+    target_link_libraries(fp_tests PRIVATE FPAnalyzer fp_core)
+    target_include_directories(fp_tests PRIVATE tests)
+    add_test(NAME analysis COMMAND fp_tests)
+
+    add_executable(fp_u16_tests tests/test_u16.cpp)
+    target_link_libraries(fp_u16_tests PRIVATE FPAnalyzer)
+    target_include_directories(fp_u16_tests PRIVATE tests)
+    target_compile_features(fp_u16_tests PRIVATE cxx_std_17)
+    add_test(NAME analysis_u16 COMMAND fp_u16_tests)
+
+    add_executable(fp_roi_benchmark tests/benchmark_roi.cpp)
+    target_link_libraries(fp_roi_benchmark PRIVATE FPAnalyzer)
+    target_include_directories(fp_roi_benchmark PRIVATE tests)
+    target_compile_features(fp_roi_benchmark PRIVATE cxx_std_17)
+    add_test(NAME roi_benchmark COMMAND fp_roi_benchmark)
+
+    add_executable(fp_methods_benchmark tests/benchmark_methods.cpp)
+    target_link_libraries(fp_methods_benchmark PRIVATE FPAnalyzer fp_core)
+    target_include_directories(fp_methods_benchmark PRIVATE tests)
+    # Timed Release measurements run explicitly in CI; avoid sanitizer timings.
+    if(NOT FP_ENABLE_SANITIZERS)
+        add_test(NAME methods_benchmark COMMAND fp_methods_benchmark 21 "${CMAKE_CURRENT_BINARY_DIR}/methods_benchmark.csv")
+    endif()
+
+    add_executable(fp_b_compare tests/benchmark_b_regression.cpp)
+    target_link_libraries(fp_b_compare PRIVATE FPAnalyzer ${CMAKE_DL_LIBS})
+    target_include_directories(fp_b_compare PRIVATE tests)
+    target_compile_features(fp_b_compare PRIVATE cxx_std_17)
+
+    find_package(Threads REQUIRED)
+    add_executable(fp_method_tests tests/test_methods.cpp)
+    target_link_libraries(fp_method_tests PRIVATE FPAnalyzer fp_core Threads::Threads)
+    target_include_directories(fp_method_tests PRIVATE tests)
+    add_test(NAME methods COMMAND fp_method_tests)
+
+    add_executable(fp_c_api_test tests/test_c_header.c)
+    target_link_libraries(fp_c_api_test PRIVATE FPAnalyzer)
+    set_target_properties(fp_c_api_test PROPERTIES C_STANDARD 99 C_STANDARD_REQUIRED YES)
+    add_test(NAME c_header_and_abi COMMAND fp_c_api_test)
+
+    add_executable(fp_public_header_test tests/test_public_header.cpp)
+    target_link_libraries(fp_public_header_test PRIVATE FPAnalyzer)
+    target_compile_features(fp_public_header_test PRIVATE cxx_std_17)
+    add_test(NAME cpp_public_header_and_abi COMMAND fp_public_header_test)
+    add_test(NAME public_header_contract COMMAND "${CMAKE_COMMAND}"
+        "-DPROJECT_DIR=${CMAKE_CURRENT_SOURCE_DIR}"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/check_public_header.cmake")
+
+    add_executable(fp_real_frames tests/test_real_frames.cpp)
+    target_link_libraries(fp_real_frames PRIVATE FPAnalyzer)
+    target_compile_features(fp_real_frames PRIVATE cxx_std_17)
+    add_test(NAME real_frames COMMAND fp_real_frames "${CMAKE_CURRENT_SOURCE_DIR}/data/test_frames")
+    set_tests_properties(real_frames PROPERTIES SKIP_RETURN_CODE 77)
+
+    # ctypes runs in an unsanitized Python host; validate it in a normal build.
+    if(NOT FP_ENABLE_SANITIZERS)
+        find_package(Python3 COMPONENTS Interpreter)
+        if(Python3_FOUND)
+            add_test(NAME ctypes COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/examples/python_ctypes_test.py" "$<TARGET_FILE:FPAnalyzer>")
+        endif()
+    endif()
+endif()
+
+install(TARGETS FPAnalyzer RUNTIME DESTINATION bin LIBRARY DESTINATION lib ARCHIVE DESTINATION lib)
+install(FILES include/FPAnalyzer.h DESTINATION include)

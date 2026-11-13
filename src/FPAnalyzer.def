@@ -1,0 +1,5 @@
+LIBRARY FPAnalyzer
+EXPORTS
+    FP_AnalyzeFrameU16
+    FP_GetApiVersion
+    FP_AnalyzeFrameU16WithMethod
