@@ -39,7 +39,7 @@ jobs:
           cmake -S . -B build -G "Visual Studio 17 2022" -A ${{ matrix.platform }} "-DPython3_EXECUTABLE=$python"
       - name: Build Release
         run: cmake --build build --config Release --parallel 4
-      - name: Run native, C ABI and Python ctypes tests
+      - name: Run native, C ABI, Python ctypes tests and auto/manual benchmarks
         run: ctest --test-dir build -C Release --output-on-failure --verbose
       - name: Verify DLL architecture and exact exports
         shell: pwsh
@@ -60,6 +60,9 @@ jobs:
           $names = @($output | ForEach-Object {
             if ($_ -match '^\s+\d+\s+[0-9A-Fa-f]+\s+[0-9A-Fa-f]+\s+(\S+)') { $Matches[1] }
           }) | Sort-Object
+          if (($names -join ',') -cne 'FP_AnalyzeFrameU16,FP_GetApiVersion') {
+            throw "API v2 must export exactly FP_AnalyzeFrameU16 and FP_GetApiVersion"
+          }
           $publicHeader = Get-Content include/FPAnalyzer.h -Raw
           $declaredNames = @([regex]::Matches($publicHeader, '(?m)^int\s+(FP_\w+)\s*\(') | ForEach-Object {
             $_.Groups[1].Value

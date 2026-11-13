@@ -1,222 +1,187 @@
-# LabVIEW integration: FPAnalyzer API v1
+# LabVIEW U16 integration — API v2
 
-Primary target: **32-bit LabVIEW on Windows 11 64-bit**, using
-**FPAnalyzer.dll built with MSVC 2022 Win32 (x86)**. A 32-bit process requires
-a 32-bit DLL even when Windows itself is 64-bit. The separate x64 DLL is for
-64-bit LabVIEW; the two DLLs have the same API and filename but cannot be
-interchanged. The interface is designed for LabVIEW, but execution inside
-LabVIEW has **not** been tested. Verify it with your LabVIEW version and camera
-pipeline before instrument use.
+Use **FPAnalyzer.dll** with **FPAnalyzer.h**. These permanent filenames and the
+single simplified plain C header must be preserved. The user has successfully
+imported this header format into 32-bit LabVIEW. The v2 signature below is
+checked by compiled C/C++ ABI and ctypes tests; actual v2 Wizard import, wiring
+and execution have not been performed here. No working `.vi` was generated.
 
-## Select the DLL and runtime
+Use the **x86/Win32 DLL for 32-bit LabVIEW**, including on 64-bit Windows 11;
+use x64 only for 64-bit LabVIEW. Install the matching Microsoft VC++ 2015–2022
+Redistributable. Never use the old v1 generated node with v2: one argument was
+inserted and U8 was removed. Reimport or edit the complete prototype first.
 
-On the repository's **Actions** tab, select **Windows x86 and x64 DLL**, open a
-successful run for the desired U16-capable commit, and download **FPAnalyzer-windows-x86**
-under **Artifacts** for 32-bit LabVIEW. Extract `bin/FPAnalyzer.dll` and
-`include/FPAnalyzer.h`. The permanent public filenames are **FPAnalyzer.dll**
-and **FPAnalyzer.h**; the same simplified C header is used for LabVIEW and
-native development. No second LabVIEW-specific header is distributed.
-GitHub sign-in may be required. For 64-bit LabVIEW use
-**FPAnalyzer-windows-x64** instead. Check LabVIEW's bitness in **Help → About**;
-the Windows architecture alone does not determine which DLL to use.
+## Public wrapper connector pane
 
-Release builds use the Microsoft Visual C++ runtime. Install the supported
-**Visual C++ 2015–2022 Redistributable (x86)** for the x86 DLL, including on
-64-bit Windows. An installed x64 Redistributable does not supply the x86
-runtime. The x64 DLL requires the x64 Redistributable. Obtain installers from
-Microsoft; do not download individual runtime DLLs from third-party sites.
+Create **FP Analyze Frame U16.vi** with exactly these terminals:
 
-## Import Shared Library Wizard
+| Direction | Name | LabVIEW type |
+| --- | --- | --- |
+| input | image_pixels | 1D U16 array |
+| input | image_width | I32 |
+| input | image_height | I32 |
+| input | roi_in | 1D I32 array, 3 elements; empty means auto at wrapper level |
+| output | cropped_pixels | 1D U16 array, exactly size² valid elements, or empty on error without crop |
+| output | roi_out | 1D I32 array, exactly 3 elements |
+| output | metrics_out | 1D DBL array, exactly 4 elements |
+| output | status | I32 |
 
-1. Download the matching successful Windows Actions artifact or build Release locally.
-   Keep `FPAnalyzer.dll` and `FPAnalyzer.h` in a stable project directory; use an
-   absolute DLL path while diagnosing loading problems. Deploy the matching
-   MSVC Redistributable if the machine lacks the required runtime.
-2. In LabVIEW open **Tools → Import → Shared Library** (menu wording can vary),
-   choose to create VIs for a shared library, select the DLL and the public
-   simplified header **`include/FPAnalyzer.h`**, then select
-   `FP_GetApiVersion` and `FP_AnalyzeFrameU16`. This header uses simple C
-   declarations without export macros, compiler attributes or C++ constructs.
-   No special preprocessor definitions are needed for automatic VI generation.
-   The legacy U8 function remains declared for compatibility; choose the U16
-   function for U16 image arrays.
-3. Set **C / cdecl** explicitly; the simplified header documents the convention
-   in a comment. `FPAnalyzer.h` is the sole public declaration file for both
-   the Wizard and native callers. Check each generated
-   prototype and array setting instead of assuming the Wizard inferred them.
-4. Finish the Wizard and open each generated Call Library Function Node's
-   configuration. **Manual configuration of array-pointer parameters is often
-   necessary.** C's `roi_out[3]` and `metrics_out[4]` declarations are pointers at
-   the ABI; the Wizard may not infer their fixed allocation lengths.
+Do not add a capacity or preallocated-output input to this connector pane.
+The private generated binding/Call Library Function Node has more arguments;
+those buffers are implementation details inside the wrapper.
 
-The simplified declaration format was reported by the user to work with the
-Import Shared Library Wizard. The current canonical-header build is checked
-with native C/C++ compilation, ABI calls and export inspection; these checks
-alone do not verify automatic VI generation or execution inside LabVIEW.
+## Low-level Call Library Function Node
 
-## Manual Call Library Function Node configuration
+Import `FPAnalyzer.h` using the Import Shared Library Wizard or configure a
+Call Library Function Node manually. Choose C / **cdecl**, function
+`FP_AnalyzeFrameU16`, return type **Signed 32-bit Integer by value**. Verify all
+eight parameters in this exact order; fixed-size notation in C does not tell
+the Wizard how much LabVIEW memory to allocate.
 
-Set the library path to the x86 DLL for 32-bit LabVIEW (x64 for 64-bit LabVIEW),
-select the exact undecorated function name,
-and choose **C / cdecl**, not stdcall. All return values are **Signed 32-bit
-Integer (I32)**, passed by value. API version takes no arguments and returns 1.
+```c
+int FP_AnalyzeFrameU16(
+    const unsigned short image_pixels[],
+    int image_width,
+    int image_height,
+    const int roi_in[3],
+    unsigned short cropped_pixels[],
+    int cropped_capacity_pixels,
+    int roi_out[3],
+    double metrics_out[4]);
+```
 
-For **`FP_AnalyzeFrameU16`** (recommended), configure arguments in this exact order:
-
-| # | C argument | LabVIEW type | Passing / direction |
+| # | Parameter | Node configuration | Minimum size / source |
 | --- | --- | --- | --- |
-| 1 | `const unsigned short image_pixels[]` | 1D array of U16 | Array Data Pointer, input |
-| 2 | `int image_width` | I32 | value, input |
-| 3 | `int image_height` | I32 | value, input |
-| 4 | `unsigned short cropped_pixels[]` | 1D array of U16 | Array Data Pointer, input/output buffer |
-| 5 | `int cropped_capacity_pixels` | I32 | value, input |
-| 6 | `int roi_out[3]` | 1D array of I32 | Array Data Pointer, input/output, length >=3 |
-| 7 | `double metrics_out[4]` | 1D array of DBL | Array Data Pointer, input/output, length >=4 |
+| 1 | image_pixels | Array, Unsigned 16-bit Integer, 1 dimension, Array Data Pointer | W*H elements, validated before call |
+| 2 | image_width | Signed 32-bit Integer, Value | W |
+| 3 | image_height | Signed 32-bit Integer, Value | H |
+| 4 | roi_in | Array, Signed 32-bit Integer, 1 dimension, Array Data Pointer | 3; normalized allocated input |
+| 5 | cropped_pixels | Array, Unsigned 16-bit Integer, 1 dimension, Array Data Pointer | cropped_capacity_pixels; initialized buffer |
+| 6 | cropped_capacity_pixels | Signed 32-bit Integer, Value | internal capacity in U16 elements, not bytes |
+| 7 | roi_out | Array, Signed 32-bit Integer, 1 dimension, Array Data Pointer | constant 3; separately initialized I32[3] |
+| 8 | metrics_out | Array, Double-precision Float, 1 dimension, Array Data Pointer | constant 4; separately initialized DBL[4] |
 
-Use **Array Data Pointer**, not Array Handle or Array Handle Pointer. The DLL
-expects direct element storage, not LabVIEW memory-manager handles. Do not use
-a string for the grayscale image. `unsigned short` is U16, `int` is I32 even on
-x64, and `double` is DBL. No argument is a pointer-to-pointer. Wire allocated
-arrays into the node and take the modified arrays from the output terminals.
-If your node editor provides minimum array-size expressions, set ROI to 3 and
-metrics to 4, image to width×height and crop to the declared capacity; still
-allocate the arrays explicitly before the call.
+For crop minimum size, select the capacity parameter if the LabVIEW version
+supports parameter-based size expressions; independently wire an explicitly
+initialized buffer of that length. Do not use string, handle, Array Handle,
+pointer-to-pointer, Adapt to Type, U8 or signed I16 for the U16 buffers. Do not
+configure input/output ROI to share storage. Enable constant/input protection
+for read-only arrays if that option is available in the installed version.
+The implementation is stateless and reentrant; Run in any thread is supported.
 
-The library has no global mutable analysis state, so independent calls with
-separate buffers may run in any thread. Use the UI thread initially while
-diagnosing integration, then choose “Run in any thread” if appropriate. Keep
-each input frame stable for the full duration of its call.
+The DLL writes only 3 ROI values and 4 metric values. It cannot shrink an array
+that the Wizard allocated to 8194 elements. Correct that allocation in LabVIEW.
 
-## Prepare input and output buffers
+## Exact wiring and correction of a generated VI
 
-1. Obtain a **grayscale U16** camera image. If acquisition uses NI Vision/IMAQ,
-   extract the image to an array with the appropriate Vision VI; an IMAQ image
-   reference is not a U16 pixel pointer. Remove any camera row stride or padding.
-   Unpack 10-/12-/14-bit packed camera formats to one U16 element per pixel;
-   do not pass packed bytes or signed-I16 storage as if they were U16 grayscale.
-   U16 can hold 8-, 10-, 12-, 14- or 16-bit effective data without losing camera
-   precision; no intensity rescaling to 255 or 65535 is required. For an existing
-   U8 camera frame, convert its elements numerically to U16, preserving values.
-   Convert color images to grayscale first.
-2. Flatten into a 1D row-major array, with element `y*image_width+x` equal to
-   pixel `(x,y)`. For a LabVIEW 2D image, the desired array has height rows and
-   width columns; confirm the mapping with an asymmetric known image to catch
-   a transpose. Coordinates start at zero, X increases right, Y down.
-3. Supply width and height as positive I32 values. Validate their product using
-   I64 arithmetic before conversion: it must not exceed 2,147,483,647 and the
-   input array length must be at least that product. Do not use pixel count in
-   place of width or height.
-4. Use **Initialize Array** to create a separate U16 crop array of
-   `min(width,height)^2` elements. `width*height` is also sufficient. Supply its
-   actual **number of U16 elements** as I32 `cropped_capacity_pixels`, never
-   its byte length. For a 1280×960 input, allocate at least 960×960 = **921600
-   U16 elements** for the crop (1843200 bytes). Avoid overflow in allocation
-   calculations; use I64 for `width*height` and `2*capacity`. Do not alias input
-   and output storage. A 32-bit process may run out of memory well below the
-   API's I32 pixel-count bound.
-5. Initialize a separate **I32 array of 3 elements**, e.g. `[0,0,0]`, and a
-   separate **DBL array of 4 elements**, preferably filled with NaN. Empty
-   arrays do not reserve output storage; do not pass them.
+Keep a low-level generated VI private, or place the configured node directly
+inside the user-facing wrapper. Wire the following Case Structure flow:
 
-LabVIEW owns every array. The DLL only writes into supplied storage and never
-asks LabVIEW to free native memory. Pointer lengths cannot be checked by the
-DLL, so correct allocation is a caller responsibility.
+1. **Initialize failure outputs**: empty U16 `cropped_pixels`, Initialize Array
+   with an I32 zero and dimension size **3** for `roi_out`, and Initialize Array
+   with a DBL NaN and dimension size **4** for `metrics_out`. Use explicitly
+   typed constants so no default I32/DBL coercion changes the array types.
+2. **Validate dimensions before multiplication or allocation.** Require W>0,
+   H>0. Convert both to I64 *before* multiplication. Compute W*H and
+   `capacity64 = I64(min(W,H))*I64(min(W,H))`. Require both counts <=2147483647.
+   Also check U16 byte counts in I64 and available process memory, especially
+   for LabVIEW 32-bit; satisfying the I32 count bound does not guarantee an
+   allocation will succeed. Require Array Size(image_pixels)=W*H. On failure,
+   bypass the DLL, return status -1 and the initialized failure outputs.
+3. **Normalize roi_in** using Array Size and a Case Structure: size 0 selects
+   an allocated I32 array constant `[0,0,0]`; size 3 passes the supplied array;
+   any other length bypasses the DLL with status -1. A zero-length C pointer
+   must never reach the node. C cannot determine how many elements exist.
+4. **Allocate crop internally.** Convert checked capacity64 to I32, then
+   Initialize Array with U16 zero and that dimension size. Wire its output to
+   cropped_pixels (parameter 5) and capacity to parameter 6. Handle a LabVIEW
+   allocation failure on the error path without calling the DLL; return -4,
+   empty crop, zero ROI and NaN metrics. A 1280×960 input needs a worst-case
+   960²=921600-element buffer (1843200 bytes). Do not put capacity on the pane.
+5. **Replace oversized generated outputs.** Delete the Wizard's ~8194-element
+   ROI/metrics allocation constants or size expressions. Wire the dedicated
+   Initialize Array outputs of lengths **3** and **4** to parameters 7 and 8.
+   In Configure → Parameters set their Minimum size to constant **3** and **4**.
+   Ensure no shared size parameter, image size, crop capacity or Wizard default
+   drives these two arrays. Remove output-buffer controls from the public pane.
+   Merely changing `roi_out[]` to `roi_out[3]` in C does not fix the generated VI.
+6. **Call the DLL** with all eight arguments; wire the return value to status.
+   Pass the resulting three- and four-element array wires directly to the
+   respective output indicators. Their Array Size must be 3 and 4 on every
+   path, including locally rejected input and DLL failures.
+7. **Trim the crop conditionally.** Only for status=0, or status=-4 with
+   `roi_out[2]>0`, compute `n=I64(size)*I64(size)` and verify n<=capacity64.
+   Use Array Subset, index **0**, length checked I32(n), on parameter 5's output.
+   Return that exact 1D U16 subset. For other statuses return an empty U16 array.
+   In particular -2 reports geometry but has **no valid crop**. Do not trim or
+   display the uninitialized/previous buffer on -2.
+8. If a 2D display is useful, reshape a successful crop to size×size internally
+   or outside the VI; the requested connector-pane crop stays **1D U16**.
 
-## Read the outputs
+LabVIEW owns all arrays. The DLL only reads/writes their supplied storage; it
+never resizes LabVIEW Array Data Pointers using `malloc`, `realloc`, `new` or the
+LabVIEW Memory Manager. Actual array lengths must match the declared capacity.
 
-Branch on the I32 return status **before** interpreting measurements:
+For a later optimization, retain the checked worst-case crop buffer in a shift
+register inside an acquisition/analysis loop and reinitialize only when frame
+dimensions change. Keep capacity private, allocate separate I32[3]/DBL[4]
+results, trim the valid region each iteration and honor dataflow/in-place
+semantics so stale output never escapes after an error. This does not require a
+new DLL ABI or extra public connector inputs.
 
-| Status | Required handling |
+## ROI, outputs and errors
+
+`[0,0,0]` alone means automatic detection. A manual `[left,top,size]` requires
+left/top>=0, size>0, size<=W,H, left<=W-size and top<=H-size. Valid manual ROIs
+are copied exactly, including those touching an image edge. No clamping,
+expansion or full-frame statistics occur. A valid tiny ROI can be cropped yet
+lack enough rings for analysis; that is -4 rather than invalid geometry.
+
+Both modes analyze their square crop using identical crop-local normalization,
+robust gradient center fitting, squared-radius profiles, peak spacing/phase and
+linewidth/finesse estimation. Source and returned U16 values remain unchanged.
+`roi_out=[left,top,size]`; `metrics_out=[ring_phase,center_x,center_y,finesse_proxy]`.
+Centers are **relative to the crop**; add left/top for source-frame coordinates.
+Bright peaks satisfy `r²/spacing + ring_phase = integer`, phase in [0,1).
+Finesse is a dimensionless spacing/FWHM image proxy, not calibrated intrinsic
+optical finesse or absolute cavity displacement.
+
+| status | Handling |
 | --- | --- |
-| `0` | ROI, first `size²` crop U16 elements and all metrics are valid. |
-| `-1` | Invalid arguments: discard results, fix dimensions, pointer configuration or allocation. For valid non-overlapping output buffers, ROI is zero and metrics NaN. On overlap rejection outputs are untouched. |
-| `-2` | ROI is valid, metrics NaN, crop untouched. Allocate at least `roi[2]²` U16 elements and repeat on the **same frame**. |
-| `-3` | No fringe region: ROI zero, metrics NaN, crop untouched. Skip this frame. |
-| `-4` | Insufficient reliable rings/center/linewidth or resource failure: all metrics NaN. If `roi[2]>0`, the ROI and crop are valid for display/diagnostics; if zero, discard the crop. |
+| 0 | all four metrics and exactly size² cropped pixels are valid |
+| -1 | invalid input/ROI; zero ROI, NaN metrics, crop untouched |
+| -2 | insufficient capacity; valid retry geometry, NaN metrics, crop untouched |
+| -3 | auto could not find a region; zero ROI, NaN metrics, crop untouched |
+| -4 | insufficient reliable rings/resource failure; NaN metrics; positive size means diagnostic crop is valid, otherwise no crop |
 
-For success (or diagnostic crop on `-4` with size >0):
+Detected overlapping storage returns -1 before any output initialization;
+outputs are invalid in this case. The wrapper must always use separate arrays.
+Never use NaNs or measurements from a failed call for instrument control.
 
-1. Index `roi_out`: `[left_x, top_y, square_size]` in **camera** coordinates.
-2. Let `size=roi_out[2]`. Use **Array Subset** at index 0 with length `size*size`
-   to take only valid crop U16 elements. The buffer after this range is untouched and
-   is not image data, even if it contains previous-frame values.
-3. Use **Reshape Array** with dimensions `size,size`. The element at row y,
-   column x is `cropped_pixels[y*size+x]`. Display through an intensity graph or
-   your image-display conversion VI with the expected U16 scale. The resulting
-   2D array has `size` rows and `size` columns of U16, preserving every original
-   pixel exactly; change a display's scale separately if needed, not this data.
-4. On status 0, index metrics: `[ring_phase, ring_center_x, ring_center_y,
-   finesse_proxy]`. Center coordinates are floating-point **within the crop**;
-   global center is `(left_x+ring_center_x, top_y+ring_center_y)`.
+## Manual LabVIEW verification checklist
 
-Phase is normalized to [0,1). With `q=(x-cx)^2+(y-cy)^2`, bright peaks obey
-`q/spacing + ring_phase = integer`. It is a fractional cavity-phase observable,
-not calibrated absolute separation. A wrap from 0.99 to 0.01 may be a small
-phase change; this version does not unwrap phase across frames.
+1. Call `FP_GetApiVersion` with no arguments and I32 return: expect **2**.
+   Check `dumpbin /exports` shows exactly the two functions in the header and
+   `/headers` shows 14C for x86 or 8664 for x64. A bitness mismatch can appear
+   as load error 193; a missing MSVC runtime as error 126.
+2. Reimport/edit the U16 node with the new fourth argument. Verify U16 pointers,
+   cdecl, parameter order and constant minimum lengths 3/4. Confirm the public
+   VI has four inputs and four outputs; capacity has no connector terminal.
+3. Use 32×32 zeros, empty roi_in: wrapper supplies [0,0,0], status=-3,
+   roi_out length 3 with zeros, metrics_out length 4 with NaNs, crop empty.
+4. Same image, manual [0,0,32]: status=-4, ROI unchanged, 1024 zero U16 crop
+   elements, four NaNs. This distinguishes detection from manual analysis.
+5. Use a known synthetic ring image. Test automatic mode and then feed its
+   roi_out back as manual roi_in. Compare all metrics and every cropped pixel;
+   equivalent crops should match. Confirm center coordinates are crop-relative.
+6. Test a boundary ROI, invalid negative/out-of-frame ROI and roi_in lengths
+   1/2/4. Invalid calls must return errors without exposing a stale crop.
+7. Verify crop samples above 255 and at 0/65535. Observe Array Size results:
+   3 for ROI, 4 for metrics, size² for a valid crop, never 8194 for metadata.
+8. Validate frame-loop buffer reuse and actual camera performance separately.
 
-Finesse proxy is squared-radius peak spacing divided by median squared-radius
-FWHM. Half maximum is relative to the mean adjacent-trough baseline. It measures
-effective image sharpness, not guaranteed intrinsic optical finesse.
-
-## Diagnose loading and calls
-
-- First create a node for `FP_GetApiVersion`: C / cdecl, no parameters, I32
-  return by value. Run it and expect **1** in both architectures. API version
-  stays 1 because U16 is an additive entry point; existing U8 callers keep
-  their original signatures, numerical behavior and version result. Version 1
-  alone does not identify a U16-capable build: also check that the DLL exports
-  `FP_AnalyzeFrameU16` or use an artifact from a U16-capable commit.
-- Next test `FP_AnalyzeFrameU16` with a 32×32 all-zero U16 input, a separate
-  1024-element U16 crop filled with a known sentinel (e.g. 42330), ROI I32[3] and metrics
-  DBL[4]. Supply width=32, height=32, capacity=1024. Expect status **-3**, zero
-  ROI, NaN metrics and an untouched crop. This tests the array configuration
-  without requiring detectable rings.
-- Then use a known synthetic ring frame before testing camera images. On
-  success check ROI bounds, compare each cropped pixel to
-  `input[(y+top)*width+x+left]`, and display only the first `size*size` crop
-  elements. `examples/python_ctypes_test.py` supplies an independent cdecl
-  loader and synthetic numerical/crop check on the same DLL. Run it with
-  **x86 Python for the x86 DLL**, or x64 Python for the x64 DLL. Python is not
-  required by the DLL or LabVIEW application.
-- A missing dependency or bitness mismatch can look like “DLL not found” even
-  when the DLL path is correct. In a Visual Studio Developer Command Prompt,
-  run `dumpbin /headers FPAnalyzer.dll`: machine **14C (x86)** must match 32-bit
-  LabVIEW; **8664 (x64)** must match 64-bit LabVIEW. Windows error 193 commonly
-  indicates a wrong-architecture binary. Run `dumpbin /dependents FPAnalyzer.dll`
-  to list runtime imports (such as VCRUNTIME140.dll and MSVCP140.dll), then
-  install or repair the matching Microsoft Redistributable if dependencies
-  are missing. Error 126 can mean a dependency is missing rather than the
-  analyzer DLL itself. No Python installation is needed on the instrument PC.
-- `dumpbin /exports` should list exactly `FP_GetApiVersion`, `FP_AnalyzeFrameU8`
-  and `FP_AnalyzeFrameU16`. Decorated or additional C++ entry points indicate the
-  wrong build or configuration.
-- A 32-bit process has a smaller address space. Keep frames and buffers within
-  available process memory; the signed-I32 pixel-count limit is an API bound,
-  not a promise that such a large frame can be allocated. Native allocation
-  failures remain contained as status -4 with the existing validity rules.
-- An access violation usually indicates wrong pointer/handle mode, undersized
-  arrays, incorrect element type, or a wrong function prototype. The DLL cannot
-  protect against invalid addresses or allocations smaller than declared.
-- Blank, severely clipped or unresolved rings intentionally return an error.
-  Never pass NaN metrics to control logic. Actuator control is outside v0.1.
-
-## Intensity processing and U8 compatibility
-
-U16 input is processed directly through a typed, double-precision intensity
-view; there is no U8 conversion or reinterpretation of U16 as bytes. A histogram
-finds the frame's 1st and 99th intensity percentiles. Their span is mapped to
-200 floating-point analysis units, with subtraction of the lower percentile.
-When the span is zero, the full range is used to retain sparse patterns. A
-constant image has no contrast and returns -3. Samples are neither clipped nor
-rounded by this analysis view; values outside the percentiles remain available.
-The existing contrast, gradient and profile thresholds thus refer to relative
-frame contrast rather than a camera's ADC range. The crop always copies the
-unmodified U16 samples. Numerical output definitions above remain unchanged.
-
-The U8 function remains available through `FPAnalyzer.h`, with its original
-thresholds and behavior. It uses U8 buffers and capacities in U8 elements.
-For equivalent synthetic intensities represented as U8 or scaled U16, automated
-tests require global centers to agree within 0.1 pixel, circular phase within
-0.005 cycle and finesse proxy within 5%. These comparisons are distinct from
-the ground-truth accuracy limits of 0.7 pixel and 0.025 cycle for the noiseless
-test frames. They are synthetic test tolerances, not camera calibration bounds.
+`examples/python_ctypes_test.py` independently checks the compiled cdecl
+signature and reference allocation/trim flow, including empty ROI conversion.
+It is an executable reference for the wiring, not proof of LabVIEW execution.
+Run it with Python matching the DLL's architecture; Python is not required on
+the instrument PC. Real camera accuracy and LabVIEW verification remain manual.

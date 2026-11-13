@@ -3,7 +3,8 @@
 Place representative positive frames here as unpadded grayscale **binary PGM
 (P5), maxval 255**, extension `.pgm`. These local files are ignored by Git.
 `ctest -R real_frames --output-on-failure` analyzes every such frame and requires
-success. When none are supplied the test reports **Skipped** (exit 77), not a
+success. The runner widens these samples to U16 before calling API v2.
+When none are supplied the test reports **Skipped** (exit 77), not a
 pass. No real camera frames are included in v0.1.
 
 The runner prints measurements for manual comparison. Without independent

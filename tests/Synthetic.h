@@ -31,8 +31,8 @@ template<typename Pixel> inline std::vector<Pixel> frameTyped(const Parameters& 
     }
     return image;
 }
-inline std::vector<unsigned char> frame(const Parameters& p) {
-    return frameTyped<unsigned char>(p);
+inline std::vector<unsigned short> frame(const Parameters& p) {
+    return frameTyped<unsigned short>(p);
 }
 inline double phaseError(double a, double b) {
     double d = std::abs(a-b);

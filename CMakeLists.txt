@@ -61,6 +61,12 @@ if(BUILD_TESTING)
     target_compile_features(fp_u16_tests PRIVATE cxx_std_17)
     add_test(NAME analysis_u16 COMMAND fp_u16_tests)
 
+    add_executable(fp_roi_benchmark tests/benchmark_roi.cpp)
+    target_link_libraries(fp_roi_benchmark PRIVATE FPAnalyzer)
+    target_include_directories(fp_roi_benchmark PRIVATE tests)
+    target_compile_features(fp_roi_benchmark PRIVATE cxx_std_17)
+    add_test(NAME roi_benchmark COMMAND fp_roi_benchmark)
+
     add_executable(fp_c_api_test tests/test_c_header.c)
     target_link_libraries(fp_c_api_test PRIVATE FPAnalyzer)
     set_target_properties(fp_c_api_test PROPERTIES C_STANDARD 99 C_STANDARD_REQUIRED YES)

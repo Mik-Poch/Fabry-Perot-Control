@@ -11,6 +11,7 @@ extern "C" {
 
 // Dependency-free optional integration input: 8-bit binary PGM (P5).
 namespace {
+const int automatic[3] = {0,0,0};
 std::string token(std::istream& stream) {
     std::string text;
     while (stream >> text) {
@@ -37,11 +38,12 @@ int main(int argc,char** argv) {
                 throw std::runtime_error("unsupported PGM dimensions/depth");
             char delimiter = 0; file.get(delimiter);
             if (delimiter == '\r' && file.peek() == '\n') file.get();
-            std::vector<unsigned char> pixels(static_cast<std::size_t>(w)*h),crop(pixels.size());
-            if (!file.read(reinterpret_cast<char*>(pixels.data()),static_cast<std::streamsize>(pixels.size())))
+            std::vector<unsigned char> raw(static_cast<std::size_t>(w)*h);
+            if (!file.read(reinterpret_cast<char*>(raw.data()),static_cast<std::streamsize>(raw.size())))
                 throw std::runtime_error("truncated PGM pixels");
+            std::vector<unsigned short> pixels(raw.begin(),raw.end()), crop(pixels.size());
             int roi[3]; double metrics[4];
-            const int status = FP_AnalyzeFrameU8(pixels.data(),w,h,crop.data(),static_cast<int>(crop.size()),roi,metrics);
+            const int status = FP_AnalyzeFrameU16(pixels.data(),w,h,automatic,crop.data(),static_cast<int>(crop.size()),roi,metrics);
             std::cout << entry.path().filename() << " status=" << status;
             for (double value : metrics) std::cout << ' ' << value;
             std::cout << '\n';

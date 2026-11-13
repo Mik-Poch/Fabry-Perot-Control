@@ -1,10 +1,9 @@
-/* FPAnalyzer API v1. Permanent public header for FPAnalyzer.dll.
- * All functions use C linkage and C / cdecl; no preprocessor definitions are
- * needed by the LabVIEW Import Shared Library Wizard. C++ callers wrap the
- * include in an extern "C" block in their own source.
- * All arrays are caller-owned, contiguous and unpadded.
- * Requires 8-bit bytes, 32-bit int and IEEE-754 double on supported platforms.
- * See docs/labview_integration.md for buffer sizes and output validity.
+/* FPAnalyzer API v2. Permanent public header for FPAnalyzer.dll.
+ * Plain C declarations for the LabVIEW Import Shared Library Wizard.
+ * All functions use C linkage and C / cdecl. C++ callers wrap the include in
+ * extern "C" in their own source. No special preprocessor definitions needed.
+ * Requires 8-bit bytes, 16-bit unsigned short, 32-bit int, IEEE-754 double.
+ * Breaking change from v1: U8 removed; roi_in added to FP_AnalyzeFrameU16.
  */
 enum {
     FP_SUCCESS = 0,
@@ -16,37 +15,40 @@ enum {
 
 int FP_GetApiVersion(void);
 
-/* image_pixels: image_width*image_height U8 elements (row-major).
- * cropped_pixels: cropped_capacity_pixels U8 elements; must not overlap input.
- * roi_out: 3 I32 elements [left, top, square_size].
- * metrics_out: 4 DBL elements [phase, center_x, center_y, finesse_proxy].
- * All pointers must be non-null and all storage disjoint. Array lengths are
- * caller obligations; pointers do not convey their allocated lengths.
- * On entry, non-null roi_out is zeroed and non-null metrics_out filled with NaN.
- * Exception: detected overlap returns -1 before any initialization; outputs
- * are untouched and invalid in that case.
- *  0: all outputs valid, only size*size cropped bytes written.
- * -1: ROI zero, metrics NaN, crop untouched.
- * -2: ROI valid (required capacity=size*size), metrics NaN, crop untouched.
- * -3: ROI zero, metrics NaN, crop untouched.
- * -4: if ROI size>0, ROI and crop valid; all metrics NaN. Otherwise no crop.
- * Resource failures are contained and reported as -4 (no metrics).
+/* All arrays are caller-owned, contiguous, unpadded and mutually disjoint.
+ * image_pixels: image_width*image_height U16 elements, row-major.
+ * Positive dimensions and their product must fit signed I32.
+ * roi_in: always 3 allocated I32 elements. [0,0,0] selects automatic ROI;
+ * otherwise [left_x,top_y,square_size] must have nonnegative coordinates,
+ * positive size and fit entirely inside the image. Valid manual ROI is exact.
+ * cropped_pixels: cropped_capacity_pixels U16 ELEMENTS, not bytes.
+ * roi_out: exactly 3 I32 elements [left_x,top_y,square_size].
+ * metrics_out: exactly 4 DBL elements [phase,center_x,center_y,finesse_proxy].
+ * All pointers must be non-null; actual array lengths are caller obligations.
+ * A pointer does not convey its length. Never pass an empty LabVIEW array.
+ * On entry non-null roi_out is zeroed and metrics_out filled with NaN.
+ * Exception: detected overlap returns -1 before initialization; outputs are
+ * untouched and invalid. Source/ROI inputs are never modified.
+ *  0: all outputs valid; exactly size*size original U16 pixels copied.
+ * -1: invalid argument/ROI; ROI zero, crop untouched, metrics NaN.
+ * -2: insufficient capacity; ROI valid (required=size*size), crop untouched,
+ *     metrics NaN. Capacity is checked before any crop write.
+ * -3: automatic mode found no fringe region; ROI zero, crop untouched,
+ *     metrics NaN. Manual mode never returns -3.
+ * -4: unreliable measurement/resource failure; if ROI size>0, ROI and crop
+ *     are valid, metrics NaN. Otherwise no crop was produced.
+ * Crop tail is untouched. No exception or ownership transfer crosses the ABI.
+ * Both modes normalize/analyze only the crop; auto also scans the full frame
+ * to detect ROI. Centers are subpixel coordinates relative to the crop.
  * Phase convention: bright peaks satisfy r^2/spacing + phase = integer.
- * Centers are in cropped-image pixel coordinates, including fractional parts.
- */
-int FP_AnalyzeFrameU8(
-    const unsigned char image_pixels[], int image_width, int image_height,
-    unsigned char cropped_pixels[], int cropped_capacity_pixels,
-    int roi_out[3], double metrics_out[4]);
-
-/* Native U16 counterpart with the same status/geometry/metric contract above;
- * on success size*size U16 elements (2*size*size bytes) are written.
- * unsigned short is 16 bits. Capacities/counts are U16 ELEMENTS, not bytes;
- * each input/output pixel occupies 2 bytes. Crop values are copied exactly.
- * Analysis uses the original precision; no U8 conversion is performed.
- * API version remains 1: this is an additive, backward-compatible entry point.
+ * See docs/labview_integration.md for the four-input wrapper and wiring.
  */
 int FP_AnalyzeFrameU16(
-    const unsigned short image_pixels[], int image_width, int image_height,
-    unsigned short cropped_pixels[], int cropped_capacity_pixels,
-    int roi_out[], double metrics_out[]);
+    const unsigned short image_pixels[],
+    int image_width,
+    int image_height,
+    const int roi_in[3],
+    unsigned short cropped_pixels[],
+    int cropped_capacity_pixels,
+    int roi_out[3],
+    double metrics_out[4]);

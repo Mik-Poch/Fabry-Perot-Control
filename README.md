@@ -1,63 +1,130 @@
-# FPAnalyzer 0.1
+# FPAnalyzer 0.1 — API v2
 
-Single-frame Fabry–Pérot fringe analysis for a LabVIEW instrument application.
-The production targets are **Windows x86 and x64, MSVC 2022, C++17**. The primary
-integration is **32-bit LabVIEW on Windows 11 64-bit**, using the x86 DLL and
-native **U16 input/cropped-output arrays**. Legacy U8 callers remain supported.
-The DLL uses the C++
-standard library only: no Python, OpenCV, GPU, LabVIEW runtime, or external
-image-processing dependency. Python is used only for an independent development
-test. No actuator control, frame history, absolute calibration or optimization
-is implemented.
+Single-frame Fabry–Pérot fringe analysis for **Windows Win32/x86 (primary,
+32-bit LabVIEW)** and x64, MSVC 2022, C++17. The DLL uses only the C++ standard
+library. No Python, OpenCV, GPU or LabVIEW runtime is required by the DLL.
+No actuator control, frame history, absolute calibration or A/B/C/D methods.
 
-## Download the Windows DLL
+## Breaking change: API version 2
 
-On this repository's **Actions** tab, select **Windows x86 and x64 DLL**, open a successful
-run for the desired commit, and download **FPAnalyzer-windows-x86** for 32-bit
-LabVIEW or **FPAnalyzer-windows-x64** for 64-bit LabVIEW under
-**Artifacts** (GitHub sign-in may be required). Extract `bin/FPAnalyzer.dll` and
-`include/FPAnalyzer.h`. These are the permanent public filenames: **FPAnalyzer.dll**
-and **FPAnalyzer.h**. There is one simplified public header for LabVIEW and
-native callers. The artifact is uploaded only after the MSVC build,
-native tests, C caller, Python ctypes test and exact export-name check succeed.
-Test output is available in the job log and the matching
-**FPAnalyzer-test-report-x86** or **FPAnalyzer-test-report-x64** artifact.
-An artifact from another commit is not validation of your current checkout.
+`FP_GetApiVersion()` now returns **2**. `FP_AnalyzeFrameU8` has been removed.
+`FP_AnalyzeFrameU16` has a new fourth argument, `roi_in`, so old callers must
+update/reimport their binding before loading this DLL. Do not call v2 with a
+v1 prototype. The permanent public files remain **FPAnalyzer.dll** and
+**FPAnalyzer.h**. The header retains its proven simplified plain C format;
+exports/cdecl remain internal to the implementation and `.def` file.
 
-Match the DLL to **LabVIEW's bitness**, not Windows' bitness. Install the Microsoft
-Visual C++ 2015–2022 Redistributable (x86 for the x86 DLL, x64 for the x64 DLL)
-if needed: Release builds use the normal dynamic MSVC runtime. See
-[LabVIEW integration](docs/labview_integration.md) for the Wizard and manual node
-configuration. Actual LabVIEW execution has **not** been verified.
+## DLL versus the LabVIEW wrapper
 
-## Build with Visual Studio 2022
+The user-facing **FP Analyze Frame U16.vi** has exactly four inputs:
+`image_pixels` (1D U16), `image_width` (I32), `image_height` (I32), and
+`roi_in` (1D I32, three elements; empty is converted to `[0,0,0]` internally).
+It returns `cropped_pixels` (1D U16), `roi_out` (exactly 3 I32),
+`metrics_out` (exactly 4 DBL), and `status` (I32).
 
-Install Visual Studio 2022 (or Build Tools) with **Desktop development with C++**,
-the MSVC x86/x64 toolset, Windows SDK, and CMake >=3.20. Python 3 of the **same
-architecture as the DLL** is optional for local ctypes tests and required in CI.
-From the repository root, using x86 Python for Win32:
+The low-level DLL uses caller-owned buffers for safe memory handling:
+
+```c
+int FP_GetApiVersion(void);
+int FP_AnalyzeFrameU16(
+    const unsigned short image_pixels[],
+    int image_width,
+    int image_height,
+    const int roi_in[3],
+    unsigned short cropped_pixels[],
+    int cropped_capacity_pixels,
+    int roi_out[3],
+    double metrics_out[4]);
+```
+
+The wrapper allocates buffers and computes capacity internally; capacity is
+**not** a connector-pane input. For width W and height H use `min(W,H)^2` U16
+elements, checking dimensions, image length, I64 size arithmetic, I32 limits
+and allocation failure first. Initialize result arrays to exactly 3 and 4
+items; after the call trim the crop to `roi_out[2]^2` valid pixels only when
+status is 0, or -4 with a positive ROI size. Never resize a LabVIEW Array Data
+Pointer in the DLL with `malloc`, `realloc` or `new`.
+
+See [precise LabVIEW wiring and generated-VI corrections](docs/labview_integration.md).
+There is no generated/verified `.vi` in this repository: actual LabVIEW wiring
+and execution require manual verification. The earlier simplified header was
+successfully imported according to the user; that does not verify the v2 node.
+
+## ROI and intensity handling
+
+- `[0,0,0]`: automatically detect the fringe region, choose a square and crop.
+- `[left_x,top_y,square_size]` with positive size: validate and use exactly that
+  region. No expansion, relocation, full-frame detection, full-frame downsampling
+  or full-frame statistics occur. Invalid/out-of-bounds ROIs return -1.
+- Both paths normalize the **crop** using its 1st/99th U16 percentiles mapped to
+  200 double-precision analysis units (full-range fallback). The auto detector
+  additionally uses full-frame normalization for detection only. The histogram
+  avoids full-frame floating-point buffers; no U8 conversion occurs. Original
+  pixels, including 0 and 65535, are returned bit-for-bit unchanged.
+- An allocated three-element `roi_in` is mandatory at the C boundary. Raw
+  pointers carry no array length; the wrapper must check/normalize input first.
+
+All buffers must be non-null and mutually disjoint, including `roi_in` and
+`roi_out`. Input is contiguous row-major U16, no padding:
+`image_pixels[y*width+x]`. Positive dimensions and their product must fit signed
+I32; buffers may require much more memory than available in a 32-bit process.
+Coordinates are zero-based, X right, Y down, integer locations at pixel centers.
+A small but valid manual ROI is copied exactly and can return -4 if too small
+for numerical analysis (center estimation requires at least 24×24).
+
+| Output | Definition |
+| --- | --- |
+| `roi_out[3]` | `[left_x,top_y,square_size]` in the source frame |
+| `cropped_pixels` | Exactly `square_size^2` valid original U16 elements |
+| `metrics_out[4]` | `[ring_phase,center_x,center_y,finesse_proxy]` |
+| center | Subpixel coordinates relative to the cropped image |
+| ring phase | Fractional phase in [0,1), convention below |
+| finesse proxy | Positive, dimensionless, image-derived spacing/linewidth |
+
+| Status | ROI | Crop | Metrics |
+| --- | --- | --- | --- |
+| 0 success | valid | valid | all four valid |
+| -1 invalid arguments/ROI | zero | untouched | four NaNs |
+| -2 insufficient capacity | valid, required capacity = size² | untouched | four NaNs |
+| -3 no fringe region (auto only) | zero | untouched | four NaNs |
+| -4 insufficient measurement/resources | valid if size > 0 | valid if size > 0 | four NaNs |
+
+Non-null ROI/metrics buffers are initialized even when another argument is
+invalid. Detected overlap is rejected before any writes, leaving outputs
+untouched and invalid. All actual allocation lengths are caller obligations.
+The DLL writes exactly 3 ROI and 4 metric elements and never touches the crop
+tail. Exceptions are contained as -4. Calls keep no shared mutable state.
+
+## Build and download
+
+GitHub Actions **Windows x86 and x64 DLL** builds both architectures with
+matching Python for ctypes, tests the compiled DLL, verifies exact exports and
+packages only `bin/FPAnalyzer.dll` and `include/FPAnalyzer.h`. Download
+**FPAnalyzer-windows-x86** for 32-bit LabVIEW or **FPAnalyzer-windows-x64** for
+64-bit LabVIEW from the successful run for the desired commit. Test reports
+include separate auto/manual benchmarks. Match LabVIEW's bitness, not Windows'.
+Install the matching Microsoft Visual C++ 2015–2022 Redistributable if needed.
+
+Install Visual Studio 2022 / Build Tools with Desktop development with C++,
+Windows SDK and CMake >=3.20. From the repository root (select x86 Python):
 
 ```powershell
-$python = (Get-Command python).Source # select x86 Python on PATH first
+$python = (Get-Command python).Source
 cmake -S . -B build-x86 -G "Visual Studio 17 2022" -A Win32 "-DPython3_EXECUTABLE=$python"
 cmake --build build-x86 --config Release --parallel 4
 ctest --test-dir build-x86 -C Release --output-on-failure --verbose
 cmake --install build-x86 --config Release --prefix package-x86
-python examples/python_ctypes_test.py build-x86/Release/FPAnalyzer.dll
+cmake -DPROJECT_DIR=. -DPACKAGE_DIR=package-x86 -P tests/check_public_header.cmake
 ```
 
-For x64, select x64 Python, replace `-A Win32` with `-A x64` and use separate
-`build-x64` / `package-x64` directories. Do not reuse a CMake build directory
-when changing architectures. CI builds and tests both with matching Python.
+For x64 select x64 Python and use `-A x64` with separate build/package folders.
+`dumpbin /exports` must show exactly `FP_GetApiVersion` and
+`FP_AnalyzeFrameU16`, undecorated. C callers include `FPAnalyzer.h` directly;
+C++ callers wrap its include in `extern "C" { ... }` in their own source.
+The public header has no compiler macros or platform conditionals. MSVC uses
+cdecl (`/Gd`); Python uses `ctypes.CDLL`.
 
-The x86 DLL is `build-x86/Release/FPAnalyzer.dll`; distribution files are in
-`package-x86/`. `dumpbin /exports build-x86/Release/FPAnalyzer.dll` must show only
-`FP_GetApiVersion`, `FP_AnalyzeFrameU8` and `FP_AnalyzeFrameU16`, undecorated. The public header compiles
-as C99; C and C++ ABI tests link and call the actual shared library. Windows
-exports come from the `.def` file, with cdecl/visibility definitions private to
-the build. No export or calling-convention macros belong in the public header.
-
-Linux is a development/testing platform, not a way to generate the Windows DLL:
+Linux is for development/algorithm tests, not producing the Windows DLL:
 
 ```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
@@ -66,114 +133,13 @@ ctest --test-dir build --output-on-failure --verbose
 cmake -S . -B build-asan -DCMAKE_BUILD_TYPE=Debug -DFP_ENABLE_SANITIZERS=ON
 cmake --build build-asan --parallel 4
 ctest --test-dir build-asan --output-on-failure
+./build/fp_roi_benchmark
 ```
 
-The Linux output is `build/libFPAnalyzer.so`. Sanitizer builds test native code
-and the C caller; ctypes is tested in the normal build to avoid loading a
-sanitized library into an unsanitized Python process.
-
-## API and data layout
-
-```c
-int FP_GetApiVersion(void); /* returns 1 */
-int FP_AnalyzeFrameU8(const unsigned char image_pixels[],
-    int image_width, int image_height, unsigned char cropped_pixels[],
-    int cropped_capacity_pixels, int roi_out[3], double metrics_out[4]);
-int FP_AnalyzeFrameU16(const unsigned short image_pixels[],
-    int image_width, int image_height, unsigned short cropped_pixels[],
-    int cropped_capacity_pixels, int roi_out[], double metrics_out[]);
-```
-
-All functions use C linkage and `cdecl`. API version remains **1**: U16 support
-is additive and preserves U8 ABI and behavior. Check for the new export rather
-than relying on version 1 alone to identify a U16-capable DLL.
-
-U16 is recommended for LabVIEW and higher-dynamic-range cameras: input/crop
-arguments are native `unsigned short` arrays (16 bits, 0–65535), recognized as
-integer data rather than characters. 8-/10-/12-/14-/16-bit effective grayscale
-data can occupy U16 elements without scaling to an assumed maximum. Import
-**`FPAnalyzer.h`** in LabVIEW's Shared Library Wizard, select C/cdecl,
-and configure image/crop as 1D **U16 Array Data Pointer**, dimensions/capacity as
-I32 values, ROI as I32[3], metrics as DBL[4] and the return value as I32. Allocate
-all buffers before calling. This single simplified C header declares all three
-exports, including the legacy U8 entry point. Select the version and U16
-functions for the recommended camera interface. No special preprocessor
-definitions are required for automatic VI generation. There is no separate
-LabVIEW-specific header.
-
-C callers include `FPAnalyzer.h` directly. C++ callers provide C linkage in
-their own source, keeping the public header plain C:
-
-```cpp
-extern "C" {
-#include "FPAnalyzer.h"
-}
-```
-
-Use the C/cdecl calling convention (the MSVC project explicitly selects `/Gd`).
-The automated header contract checks plain declarations, the sole public header
-name and agreement with the export lists. C/C++ ABI tests verify signatures and
-calls; Windows CI compares actual `dumpbin /exports` names to the header and
-checks the installed header before uploading each architecture's package. These
-checks do not establish LabVIEW Wizard or runtime validation.
-
-For U16, capacity is in **pixels/elements, not bytes**: a 1280×960 image needs at
-most 960×960 = **921600 U16 crop elements**, occupying 1843200 bytes. After a
-valid crop, take only the first `roi[2]*roi[2]` U16 elements, then reshape to a
-`roi[2]` by `roi[2]` 2D U16 array. Crop samples are copied exactly, including
-values above 255 and the endpoints 0 and 65535. See
-[LabVIEW integration](docs/labview_integration.md) for the exact parameter table,
-status handling, import instructions and initial LabVIEW checks.
-
-All buffers belong to the caller. Input is U8 or U16 (according to the entry point)
-grayscale, row-major, no row padding: `image_pixels[y*width+x]`. Coordinates are
-zero-based, X rightward, Y downward; integer coordinates refer to pixel centers.
-The API requires 32-bit `int` and 64-bit IEEE-754 `double`. The image product must
-fit signed I32 (at most `INT_MAX` pixels); actual process memory may impose a
-much lower bound, especially for U16 in 32-bit LabVIEW. Width and height must be positive;
-images smaller than 24 pixels on either side cannot provide an ROI.
-
-| Output | Meaning |
-| --- | --- |
-| `roi_out[0..2]` | `[left_x, top_y, square_size]` in the source image |
-| `cropped_pixels[0..size*size-1]` | Exact square crop, row-major, no padding |
-| `metrics_out[0]` | Fractional phase in [0,1), convention below |
-| `metrics_out[1..2]` | Subpixel ring-center X,Y **relative to the crop** |
-| `metrics_out[3]` | Positive dimensionless image-derived finesse proxy |
-
-All pointers must be non-null and storage must be disjoint. Input allocation
-must contain at least `width*height` elements, crop allocation at least the
-declared capacity, ROI allocation at least 3 I32s and metrics at least 4 DBLs.
-The function cannot verify actual allocation lengths or pointer validity. Do
-not pass LabVIEW handles, strided images, packed RGB data or overlapping arrays.
-
-| Status | ROI | Crop | Metrics |
-| --- | --- | --- | --- |
-| `0` success | valid | exactly `size*size` valid pixel elements | all four valid |
-| `-1` invalid argument | zero | untouched | NaN |
-| `-2` insufficient capacity | valid; required capacity = `size*size` | untouched | NaN |
-| `-3` no detectable fringe region | zero | untouched | NaN |
-| `-4` insufficient reliable measurement | valid if size > 0 | valid if size > 0 | NaN |
-
-On entry the function initializes non-null ROI and metrics buffers even if
-another pointer is null. **Exception:** detected overlapping storage is rejected
-before initialization; outputs are untouched and invalid in that case. A
-resource/allocation failure is contained at the ABI and mapped to `-4`; size
-zero then means no crop was produced. No C++ exception crosses the API.
-The crop buffer tail is always untouched. Capacity is checked before copying.
-For simple LabVIEW integration allocate `min(width,height)^2` crop elements (or
-`width*height`); a smaller capacity may return `-2` with retry geometry. Call again
-on the same frame after resizing. Calls keep no shared mutable state.
-
-The U16 analysis uses the same numerical stages as U8 through a typed
-double-precision view. It subtracts the frame's 1st intensity percentile and
-maps the 1st–99th percentile span to 200 floating-point analysis units (full
-range fallback when this span is zero), without clipping, rounding or U8
-conversion. This makes intensity thresholds relative to the observed contrast,
-independent of effective ADC depth. The original U8 thresholds remain intact;
-phase, center coordinates and finesse definitions are unchanged. Synthetic
-U8/scaled-U16 comparisons allow 0.1-pixel center difference, 0.005-cycle phase
-difference and 5% finesse difference; the original ground-truth tests also run.
+The Linux library is `build/libFPAnalyzer.so`. Sanitizers exercise native code;
+ctypes runs in the regular build to avoid mixing a sanitized library with an
+unsanitized Python host. Python tests use only the standard library. Optional
+real-camera PGM frames are skipped when absent, not counted as validation.
 
 ## Algorithm and scientific conventions
 

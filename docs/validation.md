@@ -1,3 +1,73 @@
+# API v2 U16/manual ROI validation — 2026-11-13
+
+This section describes the current API. The entries below `Historical records`
+are retained evidence of earlier versions and do not describe today's exports
+or signatures. API v2 exports only FP_GetApiVersion and FP_AnalyzeFrameU16;
+the latter now requires roi_in[3] as its fourth argument. Do not use v1 bindings.
+
+## Current local checks
+
+Linux x86_64, GCC 14.2.0, CMake 3.31.10, Ninja 1.13.0, Python 3.12.14.
+Release build with CMake, build parallelism 4 and verbose CTest passed all
+seven required tests: analysis (6 native groups migrated to U16), U16 (4 groups),
+ROI benchmark, C99 ABI, C++ public-header/signature ABI, public-header contract,
+and independent ctypes. The optional real-frame test was **skipped**, with no
+camera images provided. No LabVIEW development environment was used.
+A separate Debug build with FP_ENABLE_SANITIZERS=ON passed all six native
+checks under AddressSanitizer and UBSan, with no diagnostics; real frames were
+skipped and ctypes is intentionally excluded from sanitized builds.
+
+Coverage includes automatic [0,0,0], exact manual crops, all four frame corners,
+full-height squares, one-pixel valid crops, invalid negative/zero/overflow/out-of-
+bounds ROI, null arguments, I32 dimension overflow, zero/short/exact capacities,
+metadata and crop canaries, untouched buffer tails and original U16 endpoints.
+Center checks use crop-relative ground truth; phase and finesse conventions
+are unchanged. Equivalent auto/manual crops have identical metrics, and changes
+to all pixels outside a manual ROI leave its metrics unchanged. Constant manual
+crops return -4 with valid diagnostic geometry/pixels, while auto returns -3.
+The ctypes reference wrapper tests empty ROI normalization, internal capacity
+allocation, exact trimming and three-/four-element metadata. Compiled signature
+checks verify const roi_in in the fourth position. Linux symbol inspection
+shows exactly the two API v2 exports.
+
+## Separate auto/manual benchmark
+
+`build/fp_roi_benchmark` uses U16 1280×960 synthetic frames, center (645.4,470.8),
+phase 0.27, Airy coefficient 24, amplitude 50000, background 1000, noise sigma 3.
+Each mode is warmed, then timed nine times with alternating order. The table
+records the median of those nine calls in one standalone Release run. The manual
+input is the automatically detected ROI so both modes analyze identical data.
+Generation and caller-buffer allocation are outside timing; DLL allocation,
+normalization, cropping and numerical analysis are inside. The auto timer also
+includes full-frame normalization, downsampling and detection.
+
+| Pattern radius / q spacing | ROI [left,top,size] | Auto median | Manual median | Reduction |
+| --- | --- | --- | --- | --- |
+| 110 px / 1800 px² | [502,326,277] | 7.455 ms | 5.317 ms | 28.7% (1.40×) |
+| 340 px / 15000 px² | [293,101,726] | 41.399 ms | 38.862 ms | 6.1% (1.07×) |
+
+Manual selection reduced measured time in this run. Shared-cloud timings vary;
+the benefit depends on crop size and full-frame overhead. These measurements
+are neither a real-time bound nor Windows/instrument timing. The benchmark
+prints fresh results and verifies successful analysis/identical geometry on
+every call; it does not assert a noisy performance threshold in CI.
+
+## Windows and LabVIEW validation
+
+The updated Windows Actions matrix must build Win32 (primary) and x64, execute
+the same native/architecture-matched ctypes tests and benchmark, check API
+version 2 and the exact two undecorated exports, and upload FPAnalyzer.dll plus
+FPAnalyzer.h after package validation. Current-commit Windows results must be
+read from its Actions run; historical successful runs below do not validate v2.
+Detailed test logs include measured auto/manual timings on each architecture.
+
+Actual FP Analyze Frame U16.vi wiring, v2 Wizard/node import and execution in
+32-bit LabVIEW remain manual verification. Follow docs/labview_integration.md,
+including explicit I32[3]/DBL[4] output allocation and the four-input pane.
+There is no generated .vi file. Camera accuracy remains unverified.
+
+# Historical records
+
 # Validation record
 
 Current permanent public filenames: **FPAnalyzer.dll** and **FPAnalyzer.h**.
