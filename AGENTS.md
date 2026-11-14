@@ -8,13 +8,13 @@ worktree unless explicitly requested. The production target is MSVC C++17,
 Windows x86 (32-bit LabVIEW) and x64; Linux builds are useful for algorithm and
 sanitizer validation.
 
-Keep the public header C-compatible and export only FP_GetApiVersion,
+For the legacy FPAnalyzer DLL, keep FPAnalyzer.h unchanged and export only FP_GetApiVersion,
 FP_AnalyzeFrameU16, FP_AnalyzeFrameU16WithMethod and FP_AnalyzeFringeAsymmetryU16. Never allow exceptions, ownership transfer, or STL types
 across the API. Preserve status and output-validity contracts when editing.
 All per-frame state must remain local to the call.
 
-Permanent distribution convention: the public files are exactly
-`FPAnalyzer.dll` and `FPAnalyzer.h`. Maintain one simplified, plain C header for
+Legacy distribution convention: its public files are exactly
+`FPAnalyzer.dll` and `FPAnalyzer.h`. Maintain one simplified, plain C header per DLL for
 both native callers and LabVIEW's Import Shared Library Wizard. Do not create
 or distribute a separate LabVIEW header. Do not put compiler attributes,
 export/calling-convention macros, platform conditionals or C++ linkage blocks
@@ -104,3 +104,17 @@ asymmetry CSV in the Windows test artifacts. Optional real images are the four
 Image0803/0792/0699/0855 BMPs; use examples/fringe_asymmetry.py and report skips.
 See docs/fringe_asymmetry.md for indexing, numerical limits and explicit LabVIEW
 3/16/64 allocation. Existing VIs must remain unchanged.
+
+FPFringe is the independent successor DLL, with its own FPFringe.h/.def/.map and
+five FPF_ exports (API 1). Both DLLs link the static fp_core; neither DLL may
+load the other. Only the ROI finder may construct a temporary candidate crop.
+CheckFringes screens the whole supplied image and can accept two strong rings;
+a negative Boolean result returns status 0. Analysis/asymmetry must normalize
+and process the exact supplied rectangle without ROI detection or crop copies.
+Use separate width/height and row stride width. Keep square wrappers and exact
+legacy equivalence, all old thresholds and conventions; Airy center/illumination
+coordinates scale with width and height independently. Run both legacy and
+FPFringe suites, plain C/ctypes, rectangle/portrait accuracy, sanitizers and the
+FPFringe Release CSV benchmark. Check both independent artifact/header pairs.
+FPFringe docs/fpfringe.md describes the five C prototypes, fixed LabVIEW buffer
+allocations, camera ownership, fixed tracking ROI and complete-circle limits.

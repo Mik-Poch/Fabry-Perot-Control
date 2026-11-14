@@ -248,3 +248,19 @@ See [the complete numerical and LabVIEW contract](docs/fringe_asymmetry.md) and
 [measured validation and timing](docs/asymmetry_validation.md). The Windows x86/x64
 CI packages still contain `FPAnalyzer.dll` and the identical `FPAnalyzer.h`, and
 now verify all four exports and upload `asymmetry_benchmark.csv` with test logs.
+
+## FPFringe: independent modular successor
+
+The project also builds **FPFringe.dll + FPFringe.h**, API version 1, alongside
+the unchanged legacy public interface FPAnalyzer.dll + FPAnalyzer.h (API 2).
+Five C/cdecl exports separate centered camera-ROI geometry, permissive Boolean
+fringe screening, direct A/B/C/D measurements and direct multi-ring asymmetry.
+The analysis functions accept the entire supplied rectangle without ROI detection
+or hidden cropping. LabVIEW owns acquisition, camera ROI hardware and tracking.
+Both DLLs share a static core; FPFringe never loads FPAnalyzer at runtime.
+
+See [FPFringe API, LabVIEW and acquisition guide](docs/fpfringe.md) and
+[validation/benchmark evidence](docs/fpfringe_validation.md). Windows CI provides
+separate `FPFringe-windows-x86` and `FPFringe-windows-x64` artifacts while retaining
+the legacy packages. Actual new NI Wizard import and LabVIEW execution remain
+manual checks; use the x86 package with 32-bit LabVIEW on Windows 11 x64.

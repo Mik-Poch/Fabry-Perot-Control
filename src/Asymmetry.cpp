@@ -122,12 +122,12 @@ double direction(double x,double y) {
     double d=std::atan2(y,x)*180/pi;
     return d<0 ? d+360 : d;
 }
-bool analyze(fp::PixelView p,int size,double* out,double* sector) {
+bool analyze(fp::PixelView p,int width,int height,double* out,double* sector) {
     fp::Center c;
     fp::Measurement m;
     fp::ProfileFit identities;
-    if(!fp::estimateCenter(p,size,c) || !fp::measureProfile(fp::radialProfile(p,size,c),m,&identities)) return false;
-    const double radius=std::min({c.x,c.y,size-1-c.x,size-1-c.y})-2;
+    if(!fp::estimateCenter(p,width,height,c) || !fp::measureProfile(fp::radialProfile(p,width,height,c),m,&identities)) return false;
+    const double radius=std::min({c.x,c.y,width-1-c.x,height-1-c.y})-2;
     std::array<std::vector<double>,16> ps,ws;
     std::vector<double> widths;
     int rings=0;
@@ -138,16 +138,16 @@ bool analyze(fp::PixelView p,int size,double* out,double* sector) {
         std::array<bool,16> valid{};
         double sumP=0,sumW=0;int n=0;
         for(int s=0;s<16;++s) {
-            std::vector<double> prom,width;
+            std::vector<double> prom,rayWidths;
             for(int j=0;j<rays;++j) {
                 const double theta=2*pi*(s+(j+.5)/rays-.5)/16;
-                const Peak v=measureRay(p,size,c,theta,q,m.spacing,rayProfile);
-                if(v.width>0) {prom.push_back(v.prominence);width.push_back(v.width);}
+                const Peak v=measureRay(p,width,c,theta,q,m.spacing,rayProfile);
+                if(v.width>0) {prom.push_back(v.prominence);rayWidths.push_back(v.width);}
             }
             if(prom.size()<6) continue;
-            const double pp=median(prom), ww=median(width);
+            const double pp=median(prom), ww=median(rayWidths);
             std::vector<double> deviation;
-            for(double x:width) deviation.push_back(std::abs(x/ww-1));
+            for(double x:rayWidths) deviation.push_back(std::abs(x/ww-1));
             if(median(deviation)>.15) continue;
             peaks[s]={pp,ww};valid[s]=true;sumP+=pp;sumW+=ww;++n;
         }
@@ -192,6 +192,10 @@ bool analyze(fp::PixelView p,int size,double* out,double* sector) {
 }
 } // namespace
 
+bool fp::measureAsymmetry(PixelView pixels,int width,int height,double* out,double* sector) {
+    return analyze(pixels,width,height,out,sector);
+}
+
 int fp::analyzeAsymmetry(const unsigned short* image,int width,int height,const int* input,int* roiOut,double* out,double* sector) {
     const auto count=width>0 && height>0 ? static_cast<std::uint64_t>(width)*height : 0;
     const void* ptrs[]={image,input,roiOut,out,sector};
@@ -209,6 +213,6 @@ int fp::analyzeAsymmetry(const unsigned short* image,int width,int height,const 
         roiOut[0]=roi.left;roiOut[1]=roi.top;roiOut[2]=roi.size;
         std::vector<unsigned short> crop(static_cast<std::size_t>(roi.size)*roi.size);
         for(int y=0;y<roi.size;++y) std::copy_n(image+static_cast<std::size_t>(y+roi.top)*width+roi.left,roi.size,crop.data()+static_cast<std::size_t>(y)*roi.size);
-        return analyze(analysisView(crop.data(),crop.size()),roi.size,out,sector) ? 0 : -4;
+        return measureAsymmetry(analysisView(crop.data(),crop.size()),roi.size,roi.size,out,sector) ? 0 : -4;
     } catch(...) {return -4;}
 }

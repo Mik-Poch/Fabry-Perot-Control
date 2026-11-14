@@ -25,7 +25,9 @@ struct PixelView {
 PixelView analysisView(const unsigned short* p, std::size_t count);
 bool detectRoi(PixelView pixels, int width, int height, Roi& roi);
 bool estimateCenter(PixelView pixels, int size, Center& center);
+bool estimateCenter(PixelView pixels, int width, int height, Center& center);
 Profile radialProfile(PixelView pixels, int size, const Center& center, int stride = 1);
+Profile radialProfile(PixelView pixels, int width, int height, const Center& center, int stride = 1);
 
 struct ProfileFit { std::vector<double> peakQ; };
 bool measureProfile(const Profile& profile, Measurement& result, ProfileFit* fit = nullptr);

@@ -65,6 +65,18 @@ jobs:
               "| $($_.frame_size) | $($_.roi_size) | $($_.mode) | $($_.median_ms) | $($_.p95_ms) | $($_.failures) |" >> $env:GITHUB_STEP_SUMMARY
             }
           }
+      - name: Publish FPFringe measured timings
+        if: always()
+        shell: pwsh
+        run: |
+          if (Test-Path build/fpfringe_benchmark.csv) {
+            "## FPFringe Windows ${{ matrix.arch }} Release" >> $env:GITHUB_STEP_SUMMARY
+            "| Image | Operation | Median ms | p95 ms | Successes | Failures |" >> $env:GITHUB_STEP_SUMMARY
+            "|---|---|---|---|---|---|" >> $env:GITHUB_STEP_SUMMARY
+            Import-Csv build/fpfringe_benchmark.csv | ForEach-Object {
+              "| $($_.width)x$($_.height) | $($_.operation) | $($_.median_ms) | $($_.p95_ms) | $($_.successes) | $($_.failures) |" >> $env:GITHUB_STEP_SUMMARY
+            }
+          }
       - name: Verify DLL architecture and exact exports
         shell: pwsh
         run: |
@@ -94,10 +106,41 @@ jobs:
           if (($names -join ',') -cne ($declaredNames -join ',')) {
             throw "DLL exports do not match FPAnalyzer.h: $($names -join ',')"
           }
+      - name: Verify independent FPFringe DLL architecture and exports
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          $dumpbin = Get-ChildItem "$vs\VC\Tools\MSVC\*\bin\Hostx64\${{ matrix.arch }}\dumpbin.exe" | Sort-Object FullName -Descending | Select-Object -First 1
+          if (!$dumpbin) { throw "dumpbin not found" }
+          $headers = & $dumpbin.FullName /headers build/Release/FPFringe.dll
+          if ($LASTEXITCODE -ne 0 -or !($headers -match '^\s+${{ matrix.machine }} machine ')) { throw "FPFringe architecture mismatch" }
+          $exports = & $dumpbin.FullName /exports build/Release/FPFringe.dll
+          if ($LASTEXITCODE -ne 0) { throw "FPFringe export inspection failed" }
+          $exports | Write-Output
+          $names = @($exports | ForEach-Object {
+            if ($_ -match '^\s+\d+\s+[0-9A-Fa-f]+\s+[0-9A-Fa-f]+\s+(\S+)') { $Matches[1] }
+          }) | Sort-Object
+          $expected = 'FPF_AnalyzeAsymmetryU16,FPF_AnalyzeU16,FPF_CheckFringesU16,FPF_FindCenteredRoiU16,FPF_GetApiVersion'
+          if (($names -join ',') -cne $expected) { throw "FPFringe exports changed" }
+          $declared = @([regex]::Matches((Get-Content include/FPFringe.h -Raw), '(?m)^int\s+(FPF_\w+)\s*\(') | ForEach-Object { $_.Groups[1].Value }) | Sort-Object
+          if (($names -join ',') -cne ($declared -join ',')) { throw "FPFringe header/export mismatch" }
+          $dependencies = & $dumpbin.FullName /dependents build/Release/FPFringe.dll
+          if ($LASTEXITCODE -ne 0 -or $dependencies -match 'FPAnalyzer\.dll') { throw "FPFringe must not depend on FPAnalyzer.dll" }
       - name: Stage distributable
         run: cmake --install build --config Release --prefix package
       - name: Verify permanent public filenames and installed header
         run: cmake -DPROJECT_DIR=. -DPACKAGE_DIR=package -P tests/check_public_header.cmake
+      - name: Verify FPFringe package and header
+        run: cmake -DPROJECT_DIR=. -DPACKAGE_DIR=package -P tests/check_fpfringe_header.cmake
+      - name: Upload FPFringe DLL and public header
+        uses: actions/upload-artifact@v4
+        with:
+          name: FPFringe-windows-${{ matrix.arch }}
+          path: |
+            package/bin/FPFringe.dll
+            package/include/FPFringe.h
+          if-no-files-found: error
       - name: Upload DLL and public header
         uses: actions/upload-artifact@v4
         with:
@@ -115,4 +158,5 @@ jobs:
             build/Testing/Temporary/LastTest.log
             build/methods_benchmark.csv
             build/asymmetry_benchmark.csv
+            build/fpfringe_benchmark.csv
           if-no-files-found: ignore

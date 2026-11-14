@@ -41,11 +41,11 @@ bool solve(std::vector<double> matrix,std::vector<double> rhs,std::vector<double
     return true;
 }
 
-bool reference(PixelView view,int size,Center& center,Measurement& result,Diagnostics* d,ProfileFit* fit=nullptr) {
+bool reference(PixelView view,int width,int height,Center& center,Measurement& result,Diagnostics* d,ProfileFit* fit=nullptr) {
     StageClock stage(d);
-    if(!estimateCenter(view,size,center)) return false;
+    if(!estimateCenter(view,width,height,center)) return false;
     stage.record(&Diagnostics::centerMs);
-    auto profile=radialProfile(view,size,center);
+    auto profile=radialProfile(view,width,height,center);
     stage.record(&Diagnostics::profileMs);
     const bool ok=measureProfile(profile,result,fit);
     stage.record(&Diagnostics::peaksMs);
@@ -55,9 +55,9 @@ bool reference(PixelView view,int size,Center& center,Measurement& result,Diagno
 // The fit uses individual 2D pixels across the supported disk, not a 1D profile.
 // A profile only initializes the parameters and excludes the aperture taper.
 struct FitSample { double x,y,value; };
-using Params=std::array<double,11>; // cx/size,cy/size,log P,phase,B,log A,log F,bx,by,ax,ay
+using Params=std::array<double,11>; // cx/width,cy/height,log P,phase,B,log A,log F,bx,by,ax,ay
 struct AiryProblem {
-    int size;
+    int width,height;
     Center origin;
     Params low{},high{};
     double evaluate(const std::vector<FitSample>& samples,const Params& p,
@@ -66,8 +66,8 @@ struct AiryProblem {
         const double period=std::exp(p[2]), amplitude=std::exp(p[5]), coefficient=std::exp(p[6]);
         double cost=0;
         for(const auto& s:samples) {
-            const double dx=s.x-p[0]*size,dy=s.y-p[1]*size;
-            const double xx=(s.x-origin.x)/size,yy=(s.y-origin.y)/size;
+            const double dx=s.x-p[0]*width,dy=s.y-p[1]*height;
+            const double xx=(s.x-origin.x)/width,yy=(s.y-origin.y)/height;
             const double theta=pi*((dx*dx+dy*dy)/period+p[3]);
             const double sine=std::sin(theta),t=coefficient*sine*sine,den=1+t;
             const double light=amplitude*(1+p[9]*xx+p[10]*yy);
@@ -78,7 +78,7 @@ struct AiryProblem {
             cost+=absolute<=huber?residual*residual:2*huber*absolute-huber*huber;
             if(h) {
                 const double dt=-light*coefficient*std::sin(2*theta)/(den*den);
-                const double jac[11]={dt*(-2*pi*dx/period*size),dt*(-2*pi*dy/period*size),
+                const double jac[11]={dt*(-2*pi*dx/period*width),dt*(-2*pi*dy/period*height),
                     dt*(-pi*(dx*dx+dy*dy)/period),dt*pi,1,light/den,-light*t/(den*den),
                     xx,yy,amplitude*xx/den,amplitude*yy/den};
                 for(int i=0;i<11;++i) {
@@ -120,19 +120,20 @@ struct AiryProblem {
         return converged;
     }
 };
-bool airy2D(PixelView view,int size,Center& center,Measurement& result,Diagnostics* d) {
+bool airy2D(PixelView view,int width,int height,Center& center,Measurement& result,Diagnostics* d) {
+    const int size=std::min(width,height);
     ProfileFit peaks;
-    if(!reference(view,size,center,result,d,&peaks)) return false;
+    if(!reference(view,width,height,center,result,d,&peaks)) return false;
     StageClock stage(d);
-    const double radius=std::min({center.x,center.y,size-1-center.x,size-1-center.y})-2;
+    const double radius=std::min({center.x,center.y,width-1-center.x,height-1-center.y})-2;
     const double maxQ=std::min(radius*radius,peaks.peakQ.back()-.15*result.spacing);
     if(maxQ<2*result.spacing) return false;
     std::vector<FitSample> samples;
     const int fineStride=std::max(1,size/180),coarseStride=std::max(1,size/90);
     std::vector<double> values;
-    for(int y=0;y<size;y+=fineStride) for(int x=0;x<size;x+=fineStride) {
+    for(int y=0;y<height;y+=fineStride) for(int x=0;x<width;x+=fineStride) {
         const double dx=x-center.x,dy=y-center.y;
-        if(dx*dx+dy*dy<=maxQ) { samples.push_back({double(x),double(y),view[std::size_t(y)*size+x]});values.push_back(samples.back().value); }
+        if(dx*dx+dy*dy<=maxQ) { samples.push_back({double(x),double(y),view[std::size_t(y)*width+x]});values.push_back(samples.back().value); }
     }
     if(samples.size()<300) return false;
     std::sort(values.begin(),values.end());
@@ -141,10 +142,10 @@ bool airy2D(PixelView view,int size,Center& center,Measurement& result,Diagnosti
     if(span<5) return false;
     for(auto& s:samples) s.value/=span;
     const double f=std::clamp(1/std::pow(std::sin(pi/(2*result.finesse)),2)-2,.2,300.0);
-    Params p={center.x/size,center.y/size,std::log(result.spacing),result.phase,low/span,0,std::log(f),0,0,0,0};
-    AiryProblem problem{size,center,{}, {}};
-    problem.low={p[0]-4.0/size,p[1]-4.0/size,p[2]-.06,p[3]-.2,-2,-3,std::log(.1),-2,-2,-1,-1};
-    problem.high={p[0]+4.0/size,p[1]+4.0/size,p[2]+.06,p[3]+.2,2,3,std::log(500.0),2,2,1,1};
+    Params p={center.x/width,center.y/height,std::log(result.spacing),result.phase,low/span,0,std::log(f),0,0,0,0};
+    AiryProblem problem{width,height,center,{}, {}};
+    problem.low={p[0]-4.0/width,p[1]-4.0/height,p[2]-.06,p[3]-.2,-2,-3,std::log(.1),-2,-2,-1,-1};
+    problem.high={p[0]+4.0/width,p[1]+4.0/height,p[2]+.06,p[3]+.2,2,3,std::log(500.0),2,2,1,1};
     std::vector<FitSample> coarse;
     for(const auto& s:samples) if(int(s.x)%coarseStride==0 && int(s.y)%coarseStride==0) coarse.push_back(s);
     // Avoid a sparse intersection between relatively prime coarse/fine grids.
@@ -155,7 +156,7 @@ bool airy2D(PixelView view,int size,Center& center,Measurement& result,Diagnosti
     if(d) {d->fitRelativeRms=relativeRms;d->fitIterations=iterations;}
     if(relativeRms>.12 || std::exp(p[5])<.15) return false;
     for(int i : {0,1,2,3,6}) if(p[i]<=problem.low[i]+1e-6 || p[i]>=problem.high[i]-1e-6) return false;
-    center={p[0]*size,p[1]*size};
+    center={p[0]*width,p[1]*height};
     result.phase=wrap(p[3]);result.spacing=std::exp(p[2]);
     result.finesse=pi/(2*std::asin(1/std::sqrt(std::exp(p[6])+2)));
     stage.record(&Diagnostics::fitMs);
@@ -165,25 +166,25 @@ bool airy2D(PixelView view,int size,Center& center,Measurement& result,Diagnosti
 //                         + 2*sqrt(q_s)*(delta dot u_s).
 // This fits signed center displacement and a shared order intercept without
 // averaging wrapped phases. u_s is the angular mean of each 45-degree sector.
-bool sectors(PixelView view,int size,Center& center,Measurement& result,Diagnostics* d) {
-    if(!reference(view,size,center,result,d)) return false;
+bool sectors(PixelView view,int width,int height,Center& center,Measurement& result,Diagnostics* d) {
+    if(!reference(view,width,height,center,result,d)) return false;
     StageClock stage(d);
     for(int iteration=0;iteration<2;++iteration) {
         if(d) { d->sectorValid.fill(false);d->sectorPhase.fill(std::numeric_limits<double>::quiet_NaN()); }
-        const double radius=std::min({center.x,center.y,size-1-center.x,size-1-center.y})-1;
+        const double radius=std::min({center.x,center.y,width-1-center.x,height-1-center.y})-1;
         const double step=std::max(1.0,radius*radius/4096);
         const int bins=int(std::floor(radius*radius/step))+1;
         std::array<Profile,8> profiles;
         std::array<std::vector<double>,8> counts;
         for(int s=0;s<8;++s) { profiles[s].step=step;profiles[s].intensity.assign(bins,0);counts[s].assign(bins,0); }
-        for(int y=0;y<size;++y) for(int x=0;x<size;++x) {
+        for(int y=0;y<height;++y) for(int x=0;x<width;++x) {
             const double dx=x-center.x,dy=y-center.y,q=(dx*dx+dy*dy)/step;
             if(q>=bins-1) continue;
             int s;
             if(std::abs(dy)<=.414213562373095*std::abs(dx)) s=dx>=0?0:4;
             else if(std::abs(dx)<=.414213562373095*std::abs(dy)) s=dy>=0?2:6;
             else s=dx>=0?(dy>=0?1:7):(dy>=0?3:5);
-            const int i=int(q);const double f=q-i,v=view[std::size_t(y)*size+x];
+            const int i=int(q);const double f=q-i,v=view[std::size_t(y)*width+x];
             profiles[s].intensity[i]+=(1-f)*v;profiles[s].intensity[i+1]+=f*v;
             counts[s][i]+=1-f;counts[s][i+1]+=f;
         }
@@ -206,7 +207,7 @@ bool sectors(PixelView view,int size,Center& center,Measurement& result,Diagnost
             const double mean=std::sin(pi/8)/(pi/8),ux=std::cos(s*pi/4)*mean,uy=std::sin(s*pi/4)*mean;
             for(double q:peaks.peakQ) {
                 const double order=std::round(q/result.spacing+result.phase);
-                observations.push_back({{order,1,2*std::sqrt(q)*ux/size,2*std::sqrt(q)*uy/size},q,s});
+                observations.push_back({{order,1,2*std::sqrt(q)*ux/width,2*std::sqrt(q)*uy/height},q,s});
             }
         }
         stage.record(&Diagnostics::peaksMs);
@@ -225,7 +226,7 @@ bool sectors(PixelView view,int size,Center& center,Measurement& result,Diagnost
             }
             if(!solve(h,g,coefficients)) return false;
         }
-        const double dx=coefficients[2]/size,dy=coefficients[3]/size;
+        const double dx=coefficients[2]/width,dy=coefficients[3]/height;
         if(std::hypot(dx,dy)>2 || std::abs(coefficients[0]/result.spacing-1)>.06) return false;
         double rss=0;std::array<int,8> support{};
         if(d) d->sectorResidual.fill(0);
@@ -244,20 +245,21 @@ bool sectors(PixelView view,int size,Center& center,Measurement& result,Diagnost
     return result.finesse>1;
 }
 
-double sample(PixelView view,int size,double x,double y) {
-    x=std::clamp(x,0.0,double(size-1));y=std::clamp(y,0.0,double(size-1));
-    const int ix=std::min(size-2,int(x)),iy=std::min(size-2,int(y));
+double sample(PixelView view,int width,int height,double x,double y) {
+    x=std::clamp(x,0.0,double(width-1));y=std::clamp(y,0.0,double(height-1));
+    const int ix=std::min(width-2,int(x)),iy=std::min(height-2,int(y));
     const double fx=x-ix,fy=y-iy;
-    const auto i=std::size_t(iy)*size+ix;
-    return (1-fy)*((1-fx)*view[i]+fx*view[i+1])+fy*((1-fx)*view[i+size]+fx*view[i+size+1]);
+    const auto i=std::size_t(iy)*width+ix;
+    return (1-fy)*((1-fx)*view[i]+fx*view[i+1])+fy*((1-fx)*view[i+width]+fx*view[i+width+1]);
 }
 // Eight spokes, four opposite pairs; signed radial lag = 2*delta dot u.
 // No full-image gradient-center estimator is called on this path.
-bool spokeCenter(PixelView view,int size,Center& center) {
+bool spokeCenter(PixelView view,int width,int height,Center& center) {
+    const int size=std::min(width,height);
     if(size<48) return false;
-    center={(size-1)/2.0,(size-1)/2.0};
+    center={(width-1)/2.0,(height-1)/2.0};
     for(int iteration=0;iteration<3;++iteration) {
-        const double radius=std::min({center.x,center.y,size-1-center.x,size-1-center.y})-2;
+        const double radius=std::min({center.x,center.y,width-1-center.x,height-1-center.y})-2;
         const int n=int(radius);
         if(n<24) return false;
         const int maxLag=iteration==0?std::min(int(size*.35),n-24):(iteration==1?12:3);
@@ -267,8 +269,8 @@ bool spokeCenter(PixelView view,int size,Center& center) {
         for(int pair=0;pair<4;++pair) {
             const double ux=std::cos(pair*pi/4),uy=std::sin(pair*pi/4);
             for(int i=0;i<n;++i) {
-                plus[i]=sample(view,size,center.x+i*ux,center.y+i*uy);
-                minus[i]=sample(view,size,center.x-i*ux,center.y-i*uy);
+                plus[i]=sample(view,width,height,center.x+i*ux,center.y+i*uy);
+                minus[i]=sample(view,width,height,center.x-i*ux,center.y-i*uy);
             }
             const auto correlation=[&](double lag) {
                 double a=0,b=0,aa=0,bb=0,ab=0;int count=0;
@@ -325,15 +327,16 @@ bool spokeCenter(PixelView view,int size,Center& center) {
         if(std::sqrt(rss/4)>(iteration==0?2.0:.6) || minCorrelation<.65) return false;
         if(iteration==2 && std::hypot(delta[0],delta[1])>.25) return false;
         center.x+=delta[0];center.y+=delta[1];
-        if(center.x<12 || center.y<12 || center.x>size-13 || center.y>size-13) return false;
+        if(center.x<12 || center.y<12 || center.x>width-13 || center.y>height-13) return false;
     }
     return true;
 }
-bool spokes(PixelView view,int size,Center& center,Measurement& result,Diagnostics* d) {
+bool spokes(PixelView view,int width,int height,Center& center,Measurement& result,Diagnostics* d) {
+    const int size=std::min(width,height);
     StageClock stage(d);
-    if(!spokeCenter(view,size,center)) return false;
+    if(!spokeCenter(view,width,height,center)) return false;
     stage.record(&Diagnostics::centerMs);
-    auto profile=radialProfile(view,size,center,std::max(1,size/350));
+    auto profile=radialProfile(view,width,height,center,std::max(1,size/350));
     stage.record(&Diagnostics::profileMs);
     const bool ok=measureProfile(profile,result);
     stage.record(&Diagnostics::peaksMs);
@@ -343,10 +346,14 @@ bool spokes(PixelView view,int size,Center& center,Measurement& result,Diagnosti
 } // namespace
 
 bool analyzeCrop(PixelView view,int size,int method,Center& center,Measurement& result,Diagnostics* d) {
-    if(method==0) return spokes(view,size,center,result,d);
-    if(method==1) return reference(view,size,center,result,d);
-    if(method==2) return airy2D(view,size,center,result,d);
-    if(method==3) return sectors(view,size,center,result,d);
+    return analyzeImage(view,size,size,method,center,result,d);
+}
+
+bool analyzeImage(PixelView view,int width,int height,int method,Center& center,Measurement& result,Diagnostics* d) {
+    if(method==0) return spokes(view,width,height,center,result,d);
+    if(method==1) return reference(view,width,height,center,result,d);
+    if(method==2) return airy2D(view,width,height,center,result,d);
+    if(method==3) return sectors(view,width,height,center,result,d);
     return false;
 }
 } // namespace fp
