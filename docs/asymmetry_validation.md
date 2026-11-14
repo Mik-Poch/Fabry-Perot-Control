@@ -88,10 +88,13 @@ use exactly the same selected ROI. No before/after speedup is claimed.
 | 640x640 | 640 | auto | 22.612 | 23.832 |
 
 These are observations on a shared cloud CPU, not an acquisition-loop timing
-guarantee. Windows runners run the same Release benchmark independently for x86
-and x64. Their actual CSV and test logs are uploaded as test-report artifacts;
-measured timing tables are also written to each Actions job summary. Do not
-substitute Linux measurements for Windows timings.
+guarantee. Windows runners successfully ran the same Release benchmark independently for x86
+and x64 for implementation commit `07f37c5591be4722ca95425179d4ffe6acb80d54`. Their actual CSV and test logs are uploaded as test-report artifacts;
+measured timing tables are also written to each Actions job summary. Actual
+Windows CSV values are retained in those artifacts; they could not be retrieved
+through the available unauthenticated public web view/API, so no Windows numeric
+timings are transcribed here. Do not substitute Linux measurements for Windows
+timings or confuse total CI job duration with per-frame benchmark latency.
 
 ## Experimental and integration limitations
 
@@ -100,13 +103,20 @@ in the workspace. Their results, multiple-ring direction consistency and the
 comparison with earlier exploratory observations therefore remain **unmeasured**.
 The ready-to-run command is in [the feature documentation](fringe_asymmetry.md#reproducing-validation).
 
-The cloud machine has no MSVC/Windows or LabVIEW runner. Windows x86/x64
-builds, exact undecorated exports, architecture-matching ctypes, package validation
-and updated DLL/header artifact upload are configured in the existing CI matrix.
-CI outcome and downloadable Windows artifacts must be checked on the pushed PR;
-this document's local results do not establish those outcomes. GitHub API calls
-from this environment returned Forbidden, so API-based run/artifact retrieval
-was unavailable during local validation.
+The cloud machine has no MSVC/Windows or LabVIEW runner. Windows validation
+was performed by the remote GitHub Actions matrix instead. The
+[PR workflow run for implementation commit 07f37c5](https://github.com/Mik-Poch/Fabry-Perot-Control/actions/runs/43618887578)
+completed **Success**. Public job pages independently confirmed every step
+successful for [Windows x86](https://github.com/Mik-Poch/Fabry-Perot-Control/actions/runs/43618887578/job/132519862825)
+and [Windows x64](https://github.com/Mik-Poch/Fabry-Perot-Control/actions/runs/43618887578/job/132519862687):
+MSVC Release compilation, native/C ABI/ctypes tests, exact undecorated export and
+architecture verification, installed package/header verification, and uploads.
+The run contains FPAnalyzer-windows-x86 and FPAnalyzer-windows-x64 artifacts
+with FPAnalyzer.dll and FPAnalyzer.h, plus FPAnalyzer-test-report-x86/x64
+containing test logs and measured benchmark CSVs. These results were verified
+from the public GitHub web pages despite GitHub API returning Forbidden. Local
+Linux results and remote Windows results are distinct; no actual LabVIEW run
+was available.
 
 No existing VIs were modified. Actual Wizard import, generated array allocation,
 new wrapper VI operation in 32-bit/64-bit LabVIEW and sustained camera acquisition
