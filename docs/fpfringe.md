@@ -18,8 +18,8 @@ int FPF_FindCenteredRoiU16(
     int image_width,
     int image_height,
     int requested_roi_size,
-    int roi_out[4],
-    double center_out[2]);
+    int roi_out[],
+    double center_out[]);
 
 int FPF_CheckFringesU16(
     const unsigned short image_pixels[],
@@ -32,22 +32,24 @@ int FPF_AnalyzeU16(
     int image_width,
     int image_height,
     int analysis_method,
-    double metrics_out[4]);
+    double metrics_out[]);
 
 int FPF_AnalyzeAsymmetryU16(
     const unsigned short image_pixels[],
     int image_width,
     int image_height,
-    double asymmetry_out[16],
-    double sector_out[64]);
+    double asymmetry_out[],
+    double sector_out[]);
 ```
 
 Exports have these exact undecorated names. FPF_GetApiVersion returns **1**;
 FP_GetApiVersion in the old DLL still returns **2**. The new header is plain C,
 without preprocessor dependencies, platform annotations or C++ linkage blocks.
-C++ callers wrap the include in their own `extern "C"` block. The array bounds
-are documentation, not an instruction to NI's Wizard to allocate arrays. In C
-parameters, arrays decay to pointers; callers must supply the documented storage.
+C++ callers wrap the include in their own `extern "C"` block. The new header uses unsized arrays, carrying forward the earlier Wizard-parser
+simplification without changing any intended C ABI type. Fixed C array bounds
+would not allocate LabVIEW arrays either: array parameters decay to pointers.
+Callers must supply the explicit lengths documented below (ROI 4, center 2,
+metrics 4, asymmetry 16, sectors 64).
 
 ## Common image and storage contract
 
