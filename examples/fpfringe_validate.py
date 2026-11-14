@@ -27,11 +27,10 @@ def main():
             continue
         pixels,w,h = load_bmp(path)
         image = (c.c_ushort*len(pixels))(*pixels)
-        roi,center,boolean = (c.c_int*4)(),(c.c_double*2)(),c.c_int()
+        roi,center = (c.c_int*4)(),(c.c_double*2)()
         rs = new.FPF_FindCenteredRoiU16(image,w,h,0,roi,center)
-        bs = new.FPF_CheckFringesU16(image,w,h,c.byref(boolean))
         results = {'image':name,'dimensions':[w,h],'roi_status':rs,'roi':list(roi),'center_full':list(center),
-                   'screen_status':bs,'analyzable':boolean.value,'full_frame_methods':[]}
+                   'full_frame_methods':[]}
         for method in range(4):
             m=(c.c_double*4)()
             status=new.FPF_AnalyzeU16(image,w,h,method,m)

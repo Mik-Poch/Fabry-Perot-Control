@@ -121,7 +121,7 @@ jobs:
           $names = @($exports | ForEach-Object {
             if ($_ -match '^\s+\d+\s+[0-9A-Fa-f]+\s+[0-9A-Fa-f]+\s+(\S+)') { $Matches[1] }
           }) | Sort-Object
-          $expected = 'FPF_AnalyzeAsymmetryU16,FPF_AnalyzeU16,FPF_CheckFringesU16,FPF_FindCenteredRoiU16,FPF_GetApiVersion'
+          $expected = 'FPF_AnalyzeAsymmetryU16,FPF_AnalyzeU16,FPF_FindCenteredRoiU16,FPF_GetApiVersion'
           if (($names -join ',') -cne $expected) { throw "FPFringe exports changed" }
           $declared = @([regex]::Matches((Get-Content include/FPFringe.h -Raw), '(?m)^int\s+(FPF_\w+)\s*\(') | ForEach-Object { $_.Groups[1].Value }) | Sort-Object
           if (($names -join ',') -cne ($declared -join ',')) { throw "FPFringe header/export mismatch" }

@@ -17,17 +17,15 @@ int main(int argc,char** argv) {
         p.cx=(p.width-1)/2.+.3;p.cy=(p.height-1)/2.-.2;const double side=std::min(p.width,p.height);
         p.radius=side*.46;p.spacing=side*side*.035;p.airy=5;p.amplitude=30000;p.background=1000;
         const auto image=synthetic::frame(p);
-        int roi[4],b;double center[2],m[4],a[16],s[64];
-        for(int operation=0;operation<8;++operation) {
-            const std::string name=operation==0?"ROI":operation==1?"screen":operation==6?"asymmetry":operation==7?"screen+B":std::string("ABCD").substr(operation-2,1);
+        int roi[4];double center[2],m[4],a[16],s[64];
+        for(int operation=0;operation<6;++operation) {
+            const std::string name=operation==0?"ROI":operation==5?"asymmetry":std::string("ABCD").substr(operation-1,1);
             std::vector<double> times;int failed=0;
             for(int k=-2;k<21;++k) {
                 const auto start=std::chrono::steady_clock::now();int status;
                 if(operation==0) status=FPF_FindCenteredRoiU16(image.data(),p.width,p.height,0,roi,center);
-                else if(operation==1) {status=FPF_CheckFringesU16(image.data(),p.width,p.height,&b);if(!b && !status) status=-4;}
-                else if(operation==6) status=FPF_AnalyzeAsymmetryU16(image.data(),p.width,p.height,a,s);
-                else if(operation==7) {status=FPF_CheckFringesU16(image.data(),p.width,p.height,&b);if(!status && b) status=FPF_AnalyzeU16(image.data(),p.width,p.height,1,m);else if(!status) status=-4;}
-                else status=FPF_AnalyzeU16(image.data(),p.width,p.height,operation-2,m);
+                else if(operation==5) status=FPF_AnalyzeAsymmetryU16(image.data(),p.width,p.height,a,s);
+                else status=FPF_AnalyzeU16(image.data(),p.width,p.height,operation-1,m);
                 const double ms=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-start).count();
                 if(k>=0) {times.push_back(ms);failed+=status!=0;} else if(status) return 2;
             }

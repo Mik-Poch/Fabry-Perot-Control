@@ -2,6 +2,5 @@ LIBRARY FPFringe
 EXPORTS
     FPF_GetApiVersion
     FPF_FindCenteredRoiU16
-    FPF_CheckFringesU16
     FPF_AnalyzeU16
     FPF_AnalyzeAsymmetryU16

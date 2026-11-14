@@ -251,10 +251,12 @@ now verify all four exports and upload `asymmetry_benchmark.csv` with test logs.
 
 ## FPFringe: independent modular successor
 
-The project also builds **FPFringe.dll + FPFringe.h**, API version 1, alongside
+The project also builds **FPFringe.dll + FPFringe.h**, API version 2, alongside
 the unchanged legacy public interface FPAnalyzer.dll + FPAnalyzer.h (API 2).
-Five C/cdecl exports separate centered camera-ROI geometry, permissive Boolean
-fringe screening, direct A/B/C/D measurements and direct multi-ring asymmetry.
+Four C/cdecl exports provide API version, centered camera-ROI geometry,
+direct A/B/C/D measurements and direct multi-ring asymmetry. Call analysis
+functions directly: status 0 enables measurement use; nonzero status rejects
+the frame's invalid result. Each analysis contains its own validity checks.
 The analysis functions accept the entire supplied rectangle without ROI detection
 or hidden cropping. LabVIEW owns acquisition, camera ROI hardware and tracking.
 Both DLLs share a static core; FPFringe never loads FPAnalyzer at runtime.

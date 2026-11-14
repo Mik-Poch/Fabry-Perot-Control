@@ -30,7 +30,7 @@ std::size_t count(int width,int height) {
 void invalidSectors(double* s) {if(s) for(int i=0;i<16;++i) {s[4*i]=s[4*i+1]=missing;s[4*i+2]=s[4*i+3]=0;}}
 }
 
-extern "C" FPF_INTERNAL_EXPORT int FPF_INTERNAL_CALL FPF_GetApiVersion(void) {return 1;}
+extern "C" FPF_INTERNAL_EXPORT int FPF_INTERNAL_CALL FPF_GetApiVersion(void) {return 2;}
 
 extern "C" FPF_INTERNAL_EXPORT int FPF_INTERNAL_CALL FPF_FindCenteredRoiU16(
     const unsigned short* pixels,int width,int height,int requested,int* roi,double* center) {
@@ -40,16 +40,6 @@ extern "C" FPF_INTERNAL_EXPORT int FPF_INTERNAL_CALL FPF_FindCenteredRoiU16(
     if(center) std::fill_n(center,2,missing);
     if(!pixels || !roi || !center || !n || requested<0 || requested>width || requested>height) return -1;
     try {return fp::findCenteredRoi(fp::analysisView(pixels,n),width,height,requested,roi,center);}
-    catch(...) {return -4;}
-}
-
-extern "C" FPF_INTERNAL_EXPORT int FPF_INTERNAL_CALL FPF_CheckFringesU16(
-    const unsigned short* pixels,int width,int height,int* analyzable) {
-    const auto n=count(width,height);
-    if(!disjoint({{pixels,n*2},{analyzable,sizeof(int)}})) return -1;
-    if(analyzable) *analyzable=0;
-    if(!pixels || !analyzable || !n) return -1;
-    try {*analyzable=fp::checkFringes(fp::analysisView(pixels,n),width,height) ? 1 : 0;return 0;}
     catch(...) {return -4;}
 }
 

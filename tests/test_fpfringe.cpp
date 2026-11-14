@@ -21,35 +21,8 @@ synthetic::Parameters parameters(int w,int h) {
 }
 template<std::size_t N> struct Guard {double before=123,v[N]{},after=456;void verify(){check(before==123&&after==456,"DBL buffer canary");}};
 struct IntGuard {int before=123,v[4]{},after=456;void verify(){check(before==123&&after==456,"I32 canary");}};
-void screening() {
-    int fp=0,fn=0;
-    auto test=[&](const std::string& name,const std::vector<unsigned short>& image,int w,int h,bool expected) {
-        int b=-1;check(FPF_CheckFringesU16(image.data(),w,h,&b)==0,"screen completed "+name);
-        fp+=b&&!expected;fn+=!b&&expected;
-        std::cout<<"screen,"<<name<<",expected="<<expected<<",actual="<<b<<'\n';
-        check(b==int(expected),"screen "+name);
-    };
-    auto p=parameters(320,320);test("resolved",synthetic::frame(p),320,320,true);
-    p.amplitude=16;p.noise=.5;test("weak",synthetic::frame(p),320,320,true);
-    p.amplitude=1;p.noise=0;test("low-contrast",synthetic::frame(p),320,320,false);
-    p=parameters(320,320);p.spacing=4800;p.radius=108;
-    auto two=synthetic::frame(p);test("two-strong-rings",two,320,320,true);
-    double m[4];check(FPF_AnalyzeU16(two.data(),320,320,1,m)==-4,"two-ring screen independent of strict B");
-    p.amplitude=0;p.noise=1000;test("noise",synthetic::frame(p),320,320,false);
-    std::vector<unsigned short> blank(320*320,1000);test("blank",blank,320,320,false);
-    blank[120*320+130]=65535;test("hot-pixel",blank,320,320,false);
-    std::vector<unsigned short> stripes(320*320);
-    for(int y=0;y<320;++y) for(int x=0;x<320;++x) stripes[y*320+x]=static_cast<unsigned short>(1000+10000*(1+std::sin(x*.2)));
-    test("stripes",stripes,320,320,false);
-    std::fill(blank.begin(),blank.end(),65535);test("fully-saturated",blank,320,320,false);
-    p=parameters(320,320);auto partial=synthetic::frame(p);
-    for(int y=0;y<320;++y) for(int x=0;x<320;++x) if(x>160) partial[y*320+x]=1000;
-    test("half-obscured",partial,320,320,false);
-    std::cout<<"screen,FP="<<fp<<",FN="<<fn<<",fixtures=10\n";
-}
 int main() {try {
-    check(FPF_GetApiVersion()==1 && FP_GetApiVersion()==2,"versions coexist");
-    screening();
+    check(FPF_GetApiVersion()==2 && FP_GetApiVersion()==2,"versions coexist");
     for(auto shape:std::vector<std::array<int,2>>{{320,320},{640,480},{1280,960},{960,1280}}) {
         auto p=parameters(shape[0],shape[1]);auto image=synthetic::frame(p),original=image;
         for(int method=0;method<4;++method) {
@@ -112,11 +85,26 @@ int main() {try {
         for(int k=0;k<64;++k) check(equal(os[k],s[k]),"exact sector equivalence");
         check(std::abs(a[4]-p.ax)<.04 && std::abs(a[5]-p.ay)<.04 && std::abs(a[6]-p.wx)<.04 && std::abs(a[7]-p.wy)<.04,"known signed asymmetry");
     }
+    // Failure is reported directly by each analysis entry point. Keep the
+    // ROI finder's two-ring evidence independent of strict B measurements.
+    auto twoParameters=parameters(320,320);twoParameters.spacing=4800;twoParameters.radius=108;
+    auto twoRings=synthetic::frame(twoParameters);double invalid[4];
+    check(FPF_AnalyzeU16(twoRings.data(),320,320,1,invalid)==-4,"two-ring B failure");
+    for(double v:invalid) check(std::isnan(v),"two-ring failure NaN");
+    check(FPF_FindCenteredRoiU16(twoRings.data(),320,320,0,roi,center)==0,"ROI finder retains two-ring evidence");
+    std::vector<unsigned short> blank(320*320,1000);
+    for(int method=0;method<4;++method) {
+        check(FPF_AnalyzeU16(blank.data(),320,320,method,invalid)==-4,"blank method failure");
+        for(double v:invalid) check(std::isnan(v),"blank method NaN");
+    }
+    double invalidSummary[16],invalidSectors[64];
+    check(FPF_AnalyzeAsymmetryU16(blank.data(),320,320,invalidSummary,invalidSectors)==-4,"blank asymmetry failure");
+    for(double v:invalidSummary) check(std::isnan(v),"blank asymmetry NaN");
+    for(int k=0;k<16;++k) check(std::isnan(invalidSectors[4*k]) && std::isnan(invalidSectors[4*k+1]) && invalidSectors[4*k+2]==0 && invalidSectors[4*k+3]==0,"invalid sector convention");
     auto p=parameters(320,320);auto image=synthetic::frame(p);
     auto call=[&] {
-        std::array<double,4> a;int localRoi[4],b;double localCenter[2],summary[16],sectors[64];
+        std::array<double,4> a;int localRoi[4];double localCenter[2],summary[16],sectors[64];
         check(FPF_AnalyzeU16(image.data(),320,320,1,a.data())==0,"thread result");
-        check(FPF_CheckFringesU16(image.data(),320,320,&b)==0 && b==1,"thread screening");
         check(FPF_FindCenteredRoiU16(image.data(),320,320,240,localRoi,localCenter)==0,"thread ROI");
         check(FPF_AnalyzeAsymmetryU16(image.data(),320,320,summary,sectors)==0,"thread asymmetry");
         return a;
@@ -128,15 +116,13 @@ int main() {try {
     check(FPF_AnalyzeU16(nullptr,320,320,1,m)==-1,"null image");
     check(FPF_AnalyzeU16(image.data(),INT_MAX,INT_MAX,1,m)==-1,"dimension overflow");
     check(FPF_AnalyzeU16(image.data(),320,320,1,nullptr)==-1,"null metrics");
-    check(FPF_CheckFringesU16(image.data(),320,320,nullptr)==-1,"null boolean");
     check(FPF_FindCenteredRoiU16(image.data(),320,320,-1,roi,center)==-1,"negative size");
     check(FPF_FindCenteredRoiU16(image.data(),320,320,0,nullptr,center)==-1,"null ROI");
     check(FPF_FindCenteredRoiU16(image.data(),320,320,0,roi,nullptr)==-1,"null center");
     double a[16],s[64];check(FPF_AnalyzeAsymmetryU16(image.data(),320,320,a,a)==-1,"overlap outputs");
     check(FPF_AnalyzeAsymmetryU16(image.data(),320,320,nullptr,s)==-1,"null summary");
     check(FPF_AnalyzeAsymmetryU16(image.data(),320,320,a,nullptr)==-1,"null sectors");
-    auto original=image;check(FPF_CheckFringesU16(image.data(),320,320,reinterpret_cast<int*>(image.data()))==-1 && image==original,"input overlap untouched");
+    auto original=image;check(FPF_AnalyzeU16(image.data(),320,320,1,reinterpret_cast<double*>(image.data()))==-1 && image==original,"input overlap untouched");
     unsigned short tiny=0;check(FPF_AnalyzeU16(&tiny,1,1,1,m)==-4,"tiny valid image");
-    int b=123;check(FPF_CheckFringesU16(&tiny,1,1,&b)==0 && b==0,"tiny screen negative");
-    std::cout<<"PASS FPFringe: rectangular methods, ROI, screening, exact legacy equivalence, ABI and concurrency\n";return 0;
+    std::cout<<"PASS FPFringe: rectangular methods, ROI, direct validity, exact legacy equivalence, ABI and concurrency\n";return 0;
 } catch(const std::exception& e) {std::cerr<<"FAIL "<<e.what()<<'\n';return 1;} }

@@ -1,4 +1,4 @@
-/* FPFringe API v1, C/cdecl. Caller-owned, disjoint, contiguous U16/I32/DBL
+/* FPFringe API v2, C/cdecl. Caller-owned, disjoint, contiguous U16/I32/DBL
  * buffers. Unsized arrays are pointers; allocate documented lengths in LabVIEW.
  * Detailed status, coordinate and CLFN contracts: docs/fpfringe.md. */
 enum {
@@ -20,13 +20,6 @@ int FPF_FindCenteredRoiU16(
     int requested_roi_size,
     int roi_out[],
     double center_out[]);
-
-/* Successful screening returns status 0 and an I32 Boolean (0 or 1). */
-int FPF_CheckFringesU16(
-    const unsigned short image_pixels[],
-    int image_width,
-    int image_height,
-    int *analyzable_out);
 
 /* Analyze the exact supplied rectangle; methods 0=A, 1=B, 2=C, 3=D. */
 int FPF_AnalyzeU16(

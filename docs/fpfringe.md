@@ -1,4 +1,4 @@
-# FPFringe API 1
+# FPFringe API 2
 
 FPFringe is a separate C++17 analysis library for Windows x86 (32-bit LabVIEW
 on Windows 11 x64) and Windows x64. The permanent files are **FPFringe.dll** and
@@ -8,7 +8,7 @@ DLL loads the other: both link the internal static analysis core. No OpenCV,
 Python, GPU, LabVIEW runtime, camera driver or external fitting library is
 required by the DLL. Python tools are optional validation clients.
 
-## Five public C/cdecl functions
+## Four public C/cdecl functions
 
 ```c
 int FPF_GetApiVersion(void);
@@ -20,12 +20,6 @@ int FPF_FindCenteredRoiU16(
     int requested_roi_size,
     int roi_out[],
     double center_out[]);
-
-int FPF_CheckFringesU16(
-    const unsigned short image_pixels[],
-    int image_width,
-    int image_height,
-    int *analyzable_out);
 
 int FPF_AnalyzeU16(
     const unsigned short image_pixels[],
@@ -42,8 +36,12 @@ int FPF_AnalyzeAsymmetryU16(
     double sector_out[]);
 ```
 
-Exports have these exact undecorated names. FPF_GetApiVersion returns **1**;
-FP_GetApiVersion in the old DLL still returns **2**. The new header is plain C,
+Exports have these exact undecorated names. FPF_GetApiVersion returns **2**;
+FP_GetApiVersion in the old DLL still returns **2**, independently.
+FPFringe API 2 removes the standalone checker from API 1. Resolve only the four
+exports above and use each analysis call's return status to validate its outputs.
+The retained function signatures, numerical definitions and ROI behavior are
+unchanged. The new header is plain C,
 without preprocessor dependencies, platform annotations or C++ linkage blocks.
 C++ callers wrap the include in their own `extern "C"` block. The new header uses unsized arrays, carrying forward the earlier Wizard-parser
 simplification without changing any intended C ABI type. Fixed C array bounds
@@ -71,7 +69,7 @@ must use independent output buffers.
 Known overlapping storage returns -1 **before initialization**, leaving outputs
 untouched and invalid, including when an output overlaps the source. Otherwise,
 non-null writable outputs are initialized before other validation: ROI to zeros,
-DBL outputs to NaN, screening Boolean to 0, sector diagnostics to [NaN,NaN,0,0].
+DBL outputs to NaN, sector diagnostics to [NaN,NaN,0,0].
 Invalid addresses/undersized buffers remain caller errors. C++ resource and
 processing exceptions are caught at the C boundary and return -4.
 
@@ -106,34 +104,6 @@ zero ROI and NaN center outputs.
 Camera offset/size increments, hardware constraints and verification of the
 actually applied ROI belong to LabVIEW. Keep the measured center separate from
 any hardware-rounded rectangle.
-
-### FPF_CheckFringesU16: optional, permissive pre-screen
-
-`analyzable_out` points to **one I32 scalar** (by pointer), not a DBL, C++ bool
-or LabVIEW Boolean byte. Value 1 means plausible fringe information, 0 means no
-sufficient evidence. A valid blank/noisy/rejected image returns **status 0 and
-Boolean 0**. Processing/resource failures return -4; argument errors return -1.
-
-The detector processes the supplied rectangle without ROI detection or cropping.
-It reuses affine normalization, the robust gradient center and a complete-circle
-radial profile. It does not run phase regression, the 11-parameter Airy fit or
-asymmetry fitting. It accepts two supported bright rings even when the strict
-reference estimator needs three. Local radial prominence uses a neighborhood
-of max(6,profile_bins/16) bins and >=20% profile span; peaks must be >=12 bins
-apart. Span must be >=10 normalized units and >=2 raw DN. For each candidate,
-32 narrow angular samples compare the peak with neighborhoods +/-0.25 of its
-nearest radial-q spacing. At least two rings each need >=24/32 positive
-prominences (>10% global profile span), with no missing arc longer than eight
-samples. Complete circles plus interpolation margins must fit the image.
-
-This is a screening heuristic, not a calibrated probability or a guarantee of
-any method's success. Half-obscured rings can be rejected; low SNR, sparse rings,
-severe clipping, large geometric errors or undersampling can produce false
-negatives. No finite synthetic fixture set establishes camera-domain FP/FN rates.
-High camera offsets do not themselves count as contrast. Uniform saturation,
-stripes, isolated hot pixels and strong unstructured noise are tested negatives.
-Partially saturated ring patterns may still be accepted if sufficient structure
-survives. Camera bit-depth metadata/exposure validation remain external.
 
 ### FPF_AnalyzeU16: direct numerical measurement
 
@@ -209,23 +179,29 @@ voltages, hardware commands or frame history is implemented.
 
 | Code | Meaning | Outputs |
 |---|---|---|
-| 0 | success | Function-specific result valid; screening Boolean may be 0, asymmetry correlation may be NaN and sectors have flags. |
+| 0 | success | Function-specific result valid; asymmetry correlation may be NaN and sectors have flags. |
 | -1 | invalid argument or requested ROI geometry | Initialized invalid outputs; overlapping storage is the no-write exception. |
 | -2 | reserved future capacity code | Never returned by this API version. |
 | -3 | ROI finder could not detect a suitable fringe region | ROI zero, center NaN. Other functions do not return -3. |
-| -4 | unreliable numerical result or processing/resource failure | DBL arrays NaN, sectors invalid; ROI zero and Boolean 0 where applicable. |
+| -4 | unreliable numerical result or processing/resource failure | DBL arrays NaN, sectors invalid; ROI zero where applicable. |
 | -5 | invalid analysis selector | AnalyzeU16 metrics NaN. |
 
-Do not turn -4 measurements into zeros or assume screening guarantees fitting.
-Dimensions below numerical support are still valid image arguments: screening
-completes with Boolean 0, numerical analyses return -4.
+The analysis functions perform their own numerical validity checks. A separate
+pre-screen is unnecessary. On status 0, accept the frame's measurement subject
+to application-specific quality checks; on any nonzero status, discard invalid
+measurements. Do not turn failed measurements or NaNs into zero phase/center or
+arbitrary piezo corrections. LabVIEW decides how to handle consecutive failures
+and whether to trigger reacquisition. The DLL contains no regulator logic.
+Dimensions below numerical support are still valid image arguments; numerical
+analyses return -4.
 
 ## LabVIEW acquisition and CLFN setup
 
 During initialization, LabVIEW acquires a full frame and calls the finder. It
 adapts returned offsets/sizes to hardware increments, configures the camera and
 records the **actual applied** settings. During tracking, acquire directly from
-a **fixed camera ROI**, optionally screen, then run analysis and/or asymmetry.
+a **fixed camera ROI**, call FPF_AnalyzeU16 and/or FPF_AnalyzeAsymmetryU16 directly,
+and check each call's returned status before using its outputs.
 Changing the ROI each frame can remove the center displacement a future
 controller intends to observe. Recentering is for setup/reacquisition.
 
@@ -250,7 +226,6 @@ in exactly the prototype order:
 |---|---|
 | GetApiVersion | none |
 | FindCenteredRoiU16 | requested size I32 value; roi_out 1D I32[4] Array Data Pointer output; center_out 1D DBL[2] Array Data Pointer output |
-| CheckFringesU16 | analyzable_out signed I32 scalar **Pointer to Value**, output (not Boolean byte, not value) |
 | AnalyzeU16 | method I32 value; metrics_out 1D DBL[4] Array Data Pointer output |
 | AnalyzeAsymmetryU16 | asymmetry_out 1D DBL[16] Array Data Pointer output; sector_out 1D DBL[64] Array Data Pointer output |
 
@@ -258,13 +233,14 @@ GetApiVersion has no image arguments. Arrays are Data Pointers, never Array
 Handles. Allocate image width*height U16 elements with verified row-major layout.
 Use Initialize Array for each output: I32 zeros of length 4; DBL NaNs of length
 2, 4, 16 or 64 as appropriate. Wire these allocated arrays into the input side
-of CLFN output terminals so the DLL receives writable storage. Use a separate
-I32 zero scalar for the screening pointer. Set minimum array lengths where
-available and verify Array Size before and after the call. C bounds do not
+of CLFN output terminals so the DLL receives writable storage. Set minimum array
+lengths where available and verify Array Size before and after the call. C bounds do not
 create or resize LabVIEW arrays, and the DLL cannot repair incorrect allocation.
-Keep all buffers disjoint. Route statuses through an error case structure.
+Keep all buffers disjoint. Route each analysis status through an error case
+structure; only status 0 enables measurement use. Asymmetry ring count, sector
+count and harmonic RMS remain available as additional quality indicators.
 
-Do not change any existing FPAnalyzer VIs. Test the new five-function wrapper VIs,
+Do not change any existing FPAnalyzer VIs. Test the new four-function wrapper VIs,
 Wizard/manual CLFN configuration, actual camera coordinate mapping, persistent
 ROI tracking and acquisition timing on the user's Windows/LabVIEW PC.
 
@@ -289,12 +265,11 @@ from unchanged-purpose FPAnalyzer-windows-x86/x64 artifacts. Every new package
 contains only its matching FPFringe.dll and FPFringe.h. Test-report artifacts
 include fpfringe_benchmark.csv, existing benchmark CSVs and full CTest logs.
 
-The benchmark measures each of the seven operations plus screening+B independently
-on 320x320, 640x480 and 1280x960 fixtures, with two warm-ups and 21 measured calls.
+The benchmark measures six operations independently: ROI finder, A, B, C, D
+and asymmetry, on 320x320, 640x480 and 1280x960 fixtures, with two warm-ups and 21 measured calls.
 Median is sorted index 10, p95 nearest-rank index 19. It records build configuration,
 pointer architecture, dimensions, successes/failures and end-to-end C-call time.
-Screening repeats normalization/center/profile work and may increase total time;
-use analysis status directly when screening offers no benefit. No real-time or
+No additional checking stage is benchmarked or required. No real-time or
 optical accuracy guarantee follows from synthetic timing.
 
 Optional validation expects Image0803/0792/0699/0855/0020.bmp. It reports new

@@ -11,8 +11,8 @@ double sample(fp::PixelView p,int width,double x,double y) {
     const auto i=static_cast<std::size_t>(iy)*width+ix;
     return (1-fy)*((1-fx)*p[i]+fx*p[i+1])+fy*((1-fx)*p[i+width]+fx*p[i+width+1]);
 }
-// Permissive two-ring screen, independent of measureProfile's three-ring fit.
-// The entire supplied rectangle contributes to normalization/center fitting.
+// Internal ring-evidence validation used by the ROI finder.
+// The fitted center is supplied by the locator; verify radial/angular support.
 bool evidence(fp::PixelView view,int width,int height,fp::Center c) {
     const auto profile=fp::radialProfile(view,width,height,c);
     const auto& p=profile.intensity;
@@ -51,11 +51,6 @@ bool evidence(fp::PixelView view,int width,int height,fp::Center c) {
     }
     return false;
 }
-}
-
-bool fp::checkFringes(PixelView view,int width,int height) {
-    Center center;
-    return estimateCenter(view,width,height,center) && evidence(view,width,height,center);
 }
 
 int fp::findCenteredRoi(PixelView view,int width,int height,int requested,int* roiOut,double* centerOut) {
