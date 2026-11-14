@@ -9,6 +9,11 @@
     fprintf(stderr, "C ABI check failed at line %d: %s\n", __LINE__, #condition); \
     return 1; } } while (0)
 
+/* Compile-time C99 assertion; a runtime CHECK(sizeof(...)) triggers MSVC
+ * C4127 under /W4 /WX even though the ABI sizes are correct. */
+typedef char AbiStorageSizes[
+    (sizeof(int) == 4 && sizeof(unsigned short) == 2 && sizeof(double) == 8) ? 1 : -1];
+
 typedef int (*Version)(void);
 typedef int (*Frame)(const unsigned short*, int, int, const int*,
                      unsigned short*, int, int*, double*);
@@ -34,7 +39,6 @@ int main(void) {
     struct { double before, values[64], after; } sectors;
     int x, y, i;
 
-    CHECK(sizeof(int) == 4 && sizeof(unsigned short) == 2 && sizeof(double) == 8);
     CHECK(version() == 2);
     CHECK(frame(blank,32,32,automatic,crop,32*32,old_roi,old_metrics) == FP_NO_FRINGE_REGION);
     CHECK(method(blank,32,32,automatic,1,crop,32*32,old_roi,old_metrics) == FP_NO_FRINGE_REGION);
