@@ -3,3 +3,4 @@ EXPORTS
     FP_AnalyzeFrameU16
     FP_GetApiVersion
     FP_AnalyzeFrameU16WithMethod
+    FP_AnalyzeFringeAsymmetryU16

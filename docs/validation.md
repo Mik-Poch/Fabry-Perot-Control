@@ -353,3 +353,10 @@ compilation and ABI tests do not establish LabVIEW Wizard import, automatic VI
 generation or actual LabVIEW execution for this restructured header. The user
 reported successful Wizard import of the earlier simplified declaration format;
 that report is distinct from the automated checks performed here.
+
+## Additive fringe-asymmetry validation
+
+See [asymmetry validation](asymmetry_validation.md) for measured synthetic
+accuracy, Release timings, sanitizer results and explicit untested platforms.
+Optional experimental BMPs use examples/fringe_asymmetry.py; missing inputs are
+skipped, never counted as passing scientific validation.

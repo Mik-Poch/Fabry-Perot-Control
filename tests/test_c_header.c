@@ -19,5 +19,11 @@ int main(void) {
     for (i=0;i<3;++i) if (roi[i]!=0) return 9;
     for (i=0;i<4;++i) if (!isnan(metrics[i])) return 10;
     if (FP_AnalyzeFrameU16WithMethod(image,32,32,manual,1,crop,32*32,roi,metrics)!=FP_INSUFFICIENT_RINGS) return 11;
+    {
+        double asymmetry[16], sectors[64];
+        if (FP_AnalyzeFringeAsymmetryU16(image,32,32,manual,roi,asymmetry,sectors)!=FP_INSUFFICIENT_RINGS) return 12;
+        for (i=0;i<16;++i) if (!isnan(asymmetry[i])) return 13;
+        for (i=0;i<16;++i) if (!isnan(sectors[4*i]) || !isnan(sectors[4*i+1]) || sectors[4*i+2]!=0 || sectors[4*i+3]!=0) return 14;
+    }
     return 0;
 }

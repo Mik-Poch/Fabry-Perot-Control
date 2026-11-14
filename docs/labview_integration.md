@@ -263,3 +263,13 @@ method 1; compare manual with auto to measure detection overhead. Do not infer
 native speed from the user's earlier approximately 50 ms manual / 60 ms auto
 LabVIEW observations, or compare this cloud's numbers to instrument timings as
 an optimization ratio. See methods_and_performance.md for raw reports and limits.
+
+## New independent fringe-asymmetry function
+
+The existing VIs and both existing U16 function configurations remain unchanged.
+For the new cdecl `FP_AnalyzeFringeAsymmetryU16`, use the same public header and
+create a separate wrapper. Allocate ROI I32[3], summary DBL[16] and sectors
+DBL[64] explicitly; C array annotations do not configure Wizard allocation.
+The [full parameter order, CLFN settings, wrapper wiring, indexing and validity
+rules](fringe_asymmetry.md#labview-32-bit-and-64-bit-integration) are authoritative.
+Actual Wizard import and LabVIEW execution remain manual verification steps.

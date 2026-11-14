@@ -234,3 +234,17 @@ when no `.pgm` frames are supplied; they are not counted as accuracy validation.
 See [validation record](docs/validation.md) for measured timing and which
 platforms have actually been exercised. GitHub Actions validates Windows on
 each push/PR; a workflow file alone does not prove that run has passed.
+
+## Angular fringe asymmetry (additive ABI v2)
+
+`FP_AnalyzeFringeAsymmetryU16` measures independent signed brightness and linewidth
+harmonics across matched rings in 16 camera-coordinate sectors. It returns ROI
+I32[3], summary DBL[16] and flat sector diagnostics DBL[64], without a crop buffer.
+API version remains 2; detect this function by its exported symbol. Existing
+analysis signatures and behavior are unchanged. This measures images, without
+actuator control or voltage calibration.
+
+See [the complete numerical and LabVIEW contract](docs/fringe_asymmetry.md) and
+[measured validation and timing](docs/asymmetry_validation.md). The Windows x86/x64
+CI packages still contain `FPAnalyzer.dll` and the identical `FPAnalyzer.h`, and
+now verify all four exports and upload `asymmetry_benchmark.csv` with test logs.

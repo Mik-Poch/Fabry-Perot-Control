@@ -6,6 +6,8 @@ extern "C" {
 #include <type_traits>
 
 // These checks use only the public declarations: no private build definitions.
+using Asymmetry = int (*)(const unsigned short*,int,int,const int*,int*,double*,double*);
+static_assert(std::is_same_v<decltype(&FP_AnalyzeFringeAsymmetryU16), Asymmetry>);
 using Version = int (*)();
 using AnalyzeU16 = int (*)(const unsigned short*, int, int, const int*, unsigned short*, int, int*, double*);
 using WithMethod = int (*)(const unsigned short*, int, int, const int*, int, unsigned short*, int, int*, double*);

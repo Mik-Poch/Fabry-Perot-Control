@@ -8,8 +8,8 @@ worktree unless explicitly requested. The production target is MSVC C++17,
 Windows x86 (32-bit LabVIEW) and x64; Linux builds are useful for algorithm and
 sanitizer validation.
 
-Keep the public header C-compatible and export only FP_GetApiVersion and
-FP_AnalyzeFrameU16 and FP_AnalyzeFrameU16WithMethod. Never allow exceptions, ownership transfer, or STL types
+Keep the public header C-compatible and export only FP_GetApiVersion,
+FP_AnalyzeFrameU16, FP_AnalyzeFrameU16WithMethod and FP_AnalyzeFringeAsymmetryU16. Never allow exceptions, ownership transfer, or STL types
 across the API. Preserve status and output-validity contracts when editing.
 All per-frame state must remain local to the call.
 
@@ -91,3 +91,16 @@ report. fp_b_compare accepts a same-architecture previous DLL/library for
 interleaved before/after benchmarks; do not compare different computers as if
 an optimization caused their timing difference. Reject/record unsuitable
 patterns and publish synthetic limitations and optional real-frame skips.
+
+Fringe asymmetry is another additive ABI v2 feature; discover the exported
+FP_AnalyzeFringeAsymmetryU16 symbol. Keep the older analysis pipelines unchanged.
+Asymmetry.cpp owns its internal crop and measurement state, uses reference B
+initialization, and measures individual narrow rays before sector aggregation.
+Preserve ring identity gates, trough-relative prominence, exact q-width conversion,
+independent signed brightness/width harmonics, missing-sector intercept fits and
+NaN failure contracts. Never infer actuator calibration from these coefficients.
+Run asymmetry native/ctypes tests and Release auto/manual benchmarks; keep the
+asymmetry CSV in the Windows test artifacts. Optional real images are the four
+Image0803/0792/0699/0855 BMPs; use examples/fringe_asymmetry.py and report skips.
+See docs/fringe_asymmetry.md for indexing, numerical limits and explicit LabVIEW
+3/16/64 allocation. Existing VIs must remain unchanged.

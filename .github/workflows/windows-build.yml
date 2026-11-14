@@ -41,6 +41,18 @@ jobs:
         run: cmake --build build --config Release --parallel 4
       - name: Run native, C ABI, ctypes, all-method accuracy and stage benchmarks
         run: ctest --test-dir build -C Release --output-on-failure --verbose
+      - name: Publish measured asymmetry timings
+        if: always()
+        shell: pwsh
+        run: |
+          if (Test-Path build/asymmetry_benchmark.csv) {
+            "## Fringe asymmetry: Windows ${{ matrix.arch }} Release" >> $env:GITHUB_STEP_SUMMARY
+            "| Frame | ROI | Mode | Median ms | p95 ms | Failures |" >> $env:GITHUB_STEP_SUMMARY
+            "|---|---|---|---|---|---|" >> $env:GITHUB_STEP_SUMMARY
+            Import-Csv build/asymmetry_benchmark.csv | ForEach-Object {
+              "| $($_.frame_size) | $($_.roi_size) | $($_.mode) | $($_.median_ms) | $($_.p95_ms) | $($_.failures) |" >> $env:GITHUB_STEP_SUMMARY
+            }
+          }
       - name: Verify DLL architecture and exact exports
         shell: pwsh
         run: |
@@ -60,8 +72,8 @@ jobs:
           $names = @($output | ForEach-Object {
             if ($_ -match '^\s+\d+\s+[0-9A-Fa-f]+\s+[0-9A-Fa-f]+\s+(\S+)') { $Matches[1] }
           }) | Sort-Object
-          if (($names -join ',') -cne 'FP_AnalyzeFrameU16,FP_AnalyzeFrameU16WithMethod,FP_GetApiVersion') {
-            throw "ABI v2 must export both U16 functions and FP_GetApiVersion"
+          if (($names -join ',') -cne 'FP_AnalyzeFrameU16,FP_AnalyzeFrameU16WithMethod,FP_AnalyzeFringeAsymmetryU16,FP_GetApiVersion') {
+            throw "ABI v2 must export the three U16 analysis functions and FP_GetApiVersion"
           }
           $publicHeader = Get-Content include/FPAnalyzer.h -Raw
           $declaredNames = @([regex]::Matches($publicHeader, '(?m)^int\s+(FP_\w+)\s*\(') | ForEach-Object {
@@ -90,4 +102,5 @@ jobs:
           path: |
             build/Testing/Temporary/LastTest.log
             build/methods_benchmark.csv
+            build/asymmetry_benchmark.csv
           if-no-files-found: ignore
