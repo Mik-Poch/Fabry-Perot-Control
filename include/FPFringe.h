@@ -1,4 +1,4 @@
-/* FPFringe API v2, C/cdecl. Caller-owned, disjoint, contiguous U16/I32/DBL
+/* FPFringe API v3, C/cdecl. Caller-owned, disjoint, contiguous U16/I32/DBL
  * buffers. Unsized arrays are pointers; allocate documented lengths in LabVIEW.
  * Detailed status, coordinate and CLFN contracts: docs/fpfringe.md. */
 enum {
@@ -12,12 +12,17 @@ enum {
 
 int FPF_GetApiVersion(void);
 
-/* Geometry only: requested size 0 selects automatic, positive selects exact. */
+/* Centered square U16 crop: requested size 0=auto, >0=exact.
+ * roi_pixels has roi_capacity_pixels U16 elements; no DLL allocation.
+ * roi_out I32[3] = [left, top, side]; center_out DBL[2] = full-frame center.
+ * On -2, geometry/center are valid and roi_pixels remains unchanged. */
 int FPF_FindCenteredRoiU16(
     const unsigned short image_pixels[],
     int image_width,
     int image_height,
     int requested_roi_size,
+    unsigned short roi_pixels[],
+    int roi_capacity_pixels,
     int roi_out[],
     double center_out[]);
 
