@@ -267,9 +267,46 @@ an optimization ratio. See methods_and_performance.md for raw reports and limits
 ## New independent fringe-asymmetry function
 
 The existing VIs and both existing U16 function configurations remain unchanged.
-For the new cdecl `FP_AnalyzeFringeAsymmetryU16`, use the same public header and
-create a separate wrapper. Allocate ROI I32[3], summary DBL[16] and sectors
-DBL[64] explicitly; C array annotations do not configure Wizard allocation.
+The plain-C declaration of `FP_AnalyzeFringeAsymmetryU16` now uses unsized `[]`
+arrays to simplify Wizard parsing. In a C parameter these are pointers to
+caller-owned memory, just like fixed-bound array parameters; the seven argument
+types/order, C/cdecl ABI, exported name and API version 2 are unchanged.
+The DLL never allocates or resizes LabVIEW Array Data Pointers. Internal crop
+memory remains private to the DLL.
+
+| Parameter (in call order) | CLFN type/direction | Required allocation |
+|---|---|---|
+| image_pixels | 1D U16 Array Data Pointer, input | width * height |
+| image_width | I32, value | -- |
+| image_height | I32, value | -- |
+| roi_in | 1D I32 Array Data Pointer, input | 3 |
+| roi_out | 1D I32 Array Data Pointer, output | 3 |
+| asymmetry_out | 1D DBL Array Data Pointer, output | 16 |
+| sector_out | 1D DBL Array Data Pointer, output | 64 |
+| Return | I32, value | -- |
+
+Neither unsized `[]` nor fixed bounds in C declarations allocate LabVIEW arrays.
+Before the CLFN call, use Initialize Array three separate times: I32 zero with
+size **3** for roi_out, DBL NaN with size **16** for asymmetry_out and DBL NaN
+with size **64** for sector_out. Wire these preallocated arrays into the input
+side of their respective output-array terminals. Allocate roi_in separately as
+I32[3] (`[0,0,0]` for automatic ROI); keep all buffers disjoint. Set CLFN minimum
+array sizes to 3/3/16/64 for ROI input/output and the two DBL outputs where
+supported. Set image length to width*height. Check Array Size before and after
+execution: ROI output 3, summary 16, sector 64. Only use measurements on status 0;
+individual invalid sectors remain [NaN,NaN,0,0]. The 64-element output retains
+four consecutive fields per sector, indices 4*s through 4*s+3, s=0..15.
+
+If the Wizard still rejects the declaration, configure the CLFN manually in a
+new wrapper VI: choose the DLL path, function `FP_AnalyzeFringeAsymmetryU16`,
+**C/cdecl**, an I32 return by value, and the seven parameters in the table's
+order. Choose Array Data Pointer (not Array Handle), one dimension and the stated
+input/output direction for each array. Use an **x86 DLL for 32-bit LabVIEW**, even
+on Windows 11 x64; use x64 only with 64-bit LabVIEW. The manual CLFN route does
+not require the Wizard to parse the header. Existing VIs need no edits.
+
 The [full parameter order, CLFN settings, wrapper wiring, indexing and validity
 rules](fringe_asymmetry.md#labview-32-bit-and-64-bit-integration) are authoritative.
-Actual Wizard import and LabVIEW execution remain manual verification steps.
+C compilation and native/ctypes calls establish source/ABI compatibility only.
+Actual NI Wizard import and LabVIEW execution have not been tested for this
+correction and remain final checks on the user's Windows/LabVIEW PC.

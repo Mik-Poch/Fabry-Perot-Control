@@ -9,16 +9,44 @@ unchanged. The new export has C linkage, cdecl and no decorated name.
 
 ```c
 int FP_AnalyzeFringeAsymmetryU16(
-    const unsigned short image_pixels[], int image_width, int image_height,
-    const int roi_in[3], int roi_out[3],
-    double asymmetry_out[16], double sector_out[64]);
+    const unsigned short image_pixels[],
+    int image_width,
+    int image_height,
+    const int roi_in[],
+    int roi_out[],
+    double asymmetry_out[],
+    double sector_out[]);
 ```
+
+The new public declaration deliberately uses unsized arrays to simplify parsing
+by NI's Import Shared Library Wizard. In C function parameters, `T a[]`,
+`T a[N]` and `T *a` describe the same pointer ABI; removing the bounds does not
+change the seven arguments, C linkage, cdecl, exported name or API version.
+It does not alter the implementation or numerical/error behavior. Plain C/C++
+compilation and native ABI calls validate those properties; they do **not**
+validate NI's parser. The final Wizard import must be checked in actual LabVIEW.
+The three previously working public declarations remain unchanged.
+
+Unsized arrays are still pointers to caller-owned memory, with these required
+allocations (the DLL cannot infer their lengths):
+
+| Parameter | LabVIEW type | Required length |
+|---|---|---|
+| image_pixels | 1D U16, Array Data Pointer | image_width * image_height |
+| image_width | I32, value | -- |
+| image_height | I32, value | -- |
+| roi_in | 1D I32, Array Data Pointer, input | 3 |
+| roi_out | 1D I32, Array Data Pointer, output | 3 |
+| asymmetry_out | 1D DBL, Array Data Pointer, output | 16 |
+| sector_out | 1D DBL, Array Data Pointer, output | 64 |
+| Return | I32, value | -- |
 
 Allocate all arrays before calling; storage must be mutually disjoint and remain
 alive during the call. Input is row-major native U16; no U8 conversion occurs.
 Positive dimensions and their product must fit I32. An invalid pointer or a short
 allocation cannot be made safe by this interface; allocation lengths are caller
-obligations. The DLL never resizes caller arrays and transfers no memory ownership.
+obligations. The DLL never allocates or resizes LabVIEW Array Data Pointers
+and transfers no memory ownership. Its internal crop allocation is separate.
 Automatic ROI is `[0,0,0]`; other requests use the exact in-bounds square
 `[left,top,size]`. Manual mode copies/analyzes only that square and never scans or
 normalizes the surrounding frame. Original samples are not modified. The crop is
@@ -144,8 +172,17 @@ resolved rings. See the measured validation report for the tested parameter rang
 Use an architecture-matching DLL. The permanent public files remain
 `FPAnalyzer.dll` and `FPAnalyzer.h`; use the same plain C header with the Import
 Shared Library Wizard. Importing the header is not proof of correct allocation.
-**C declarations `[3]`, `[16]`, `[64]` do not guarantee that the Wizard creates
-arrays of those exact lengths.** No existing VI is changed by this feature.
+**Unsized `[]` arrays do not specify or allocate buffer lengths. Even fixed C
+annotations `[3]`, `[16]`, `[64]` would not guarantee that the Wizard creates
+arrays of those lengths.** No existing VI is changed by this feature.
+
+If the Wizard still marks the export unrecognized, create a new VI, place a
+**Call Library Function Node** from Connectivity > Libraries & Executables,
+and open Configure. Select the matching-architecture `FPAnalyzer.dll` directly
+and enter/select `FP_AnalyzeFringeAsymmetryU16`. This manual route does not need
+the Wizard to parse any header. For **32-bit LabVIEW on Windows 11 x64**, select
+the **x86 DLL**; the operating system bitness does not determine DLL bitness.
+Define the return and all seven parameters manually using the table below.
 
 Configure a Call Library Function Node as follows, in exactly this order:
 

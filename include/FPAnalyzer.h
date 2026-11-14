@@ -72,28 +72,17 @@ int FP_AnalyzeFrameU16WithMethod(
     int roi_out[3],
     double metrics_out[4]);
 
-/* Additive fringe-asymmetry feature; API version remains 2. Discover by symbol.
- * Same image/ROI/disjoint-storage obligations as above; source is read-only.
- * Internally owned crop; no cropped image output or ownership transfer.
- * Allocate roi_out I32[3], asymmetry_out DBL[16], sector_out DBL[64].
- * C array bounds do not allocate LabVIEW arrays. See docs/fringe_asymmetry.md.
- * 0: all summary outputs valid (correlation may be NaN when undefined).
- * -1: invalid arguments/ROI; ROI zero, summary NaN, sectors invalid.
- * -3: auto detection failed; same invalid outputs. Manual never returns -3.
- * -4: unreliable fringes/resource failure; selected ROI retained if available,
- *     summary NaN, sectors invalid. Invalid sector = [NaN,NaN,0,0].
- * Overlap returns -1 BEFORE writes; outputs then untouched and invalid.
- * Summary: phase,crop-center-x,y,finesse,Ax,Ay,Wx,Wy,brightness-magnitude,
- * brightness-direction-deg,width-magnitude,width-direction-deg,Pearson-r,
- * valid-ring-count,valid-sector-count,combined-harmonic-RMS.
- * sector_out[4*s+0..3]: normalized prominence, normalized FWHM_q,
- * matched ring count, valid flag. s=0..15, theta=2*pi*s/16, 90deg=down.
+/* Additive ABI v2 feature, C/cdecl; discover by exported symbol.
+ * Caller-owned arrays: image width*height U16, ROI input/output 3 I32 each,
+ * asymmetry output 16 DBL, sector output 64 DBL. Allocate before calling.
+ * Unsized arrays are pointers, not allocation instructions. Full contract,
+ * output indexing and status rules: docs/fringe_asymmetry.md.
  */
 int FP_AnalyzeFringeAsymmetryU16(
     const unsigned short image_pixels[],
     int image_width,
     int image_height,
-    const int roi_in[3],
-    int roi_out[3],
-    double asymmetry_out[16],
-    double sector_out[64]);
+    const int roi_in[],
+    int roi_out[],
+    double asymmetry_out[],
+    double sector_out[]);

@@ -102,6 +102,21 @@ if(BUILD_TESTING)
     set_target_properties(fp_c_api_test PROPERTIES C_STANDARD 99 C_STANDARD_REQUIRED YES)
     add_test(NAME c_header_and_abi COMMAND fp_c_api_test)
 
+    # Focused C-only ABI caller for the Wizard-facing unsized-array prototype.
+    add_executable(fp_asymmetry_c_abi_test tests/test_asymmetry_c_abi.c)
+    target_link_libraries(fp_asymmetry_c_abi_test PRIVATE FPAnalyzer)
+    set_target_properties(fp_asymmetry_c_abi_test PROPERTIES
+        C_STANDARD 99 C_STANDARD_REQUIRED YES C_EXTENSIONS NO)
+    if(MSVC)
+        target_compile_options(fp_asymmetry_c_abi_test PRIVATE /W4 /WX)
+    else()
+        target_compile_options(fp_asymmetry_c_abi_test PRIVATE
+            -Wall -Wextra -Wpedantic -Werror=incompatible-pointer-types
+            -Werror=implicit-function-declaration)
+        target_link_libraries(fp_asymmetry_c_abi_test PRIVATE m)
+    endif()
+    add_test(NAME asymmetry_plain_c_abi COMMAND fp_asymmetry_c_abi_test)
+
     add_executable(fp_public_header_test tests/test_public_header.cpp)
     target_link_libraries(fp_public_header_test PRIVATE FPAnalyzer)
     target_compile_features(fp_public_header_test PRIVATE cxx_std_17)

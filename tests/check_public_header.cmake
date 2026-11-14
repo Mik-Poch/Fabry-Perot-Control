@@ -21,14 +21,21 @@ set(required FP_AnalyzeFrameU16 FP_AnalyzeFrameU16WithMethod FP_AnalyzeFringeAsy
 if(NOT names STREQUAL required)
     message(FATAL_ERROR "Public function declarations changed: update the ABI checks for ${names}")
 endif()
-# Fixed array notation is documentation, not a LabVIEW allocation directive.
-# Keep it explicit while compiled ABI tests check pointer order and constness.
-foreach(array_contract IN ITEMS "roi_in[3]" "roi_out[3]" "metrics_out[4]" "asymmetry_out[16]" "sector_out[64]")
+# Keep the working legacy declarations bounded. The new declaration deliberately
+# uses unsized arrays for the Wizard; neither notation allocates LabVIEW memory.
+foreach(array_contract IN ITEMS "roi_in[3]" "roi_out[3]" "metrics_out[4]")
     string(FIND "${declarations}" "${array_contract}" found)
     if(found EQUAL -1)
         message(FATAL_ERROR "Missing public array contract: ${array_contract}")
     endif()
 endforeach()
+# Guard the entire new prototype: exact argument order, types and unsized arrays.
+string(REGEX MATCH "int[ \t\r\n]+FP_AnalyzeFringeAsymmetryU16[ \t\r\n]*\\([^;]*;" asymmetry_prototype "${declarations}")
+string(REGEX REPLACE "[ \t\r\n]+" "" compact_asymmetry "${asymmetry_prototype}")
+set(expected_asymmetry "intFP_AnalyzeFringeAsymmetryU16(constunsignedshortimage_pixels[],intimage_width,intimage_height,constintroi_in[],introi_out[],doubleasymmetry_out[],doublesector_out[]);")
+if(NOT compact_asymmetry STREQUAL expected_asymmetry)
+    message(FATAL_ERROR "Keep the Wizard-facing asymmetry prototype as seven plain-C arguments with unsized arrays: ${asymmetry_prototype}")
+endif()
 foreach(export_file IN ITEMS src/FPAnalyzer.def src/FPAnalyzer.map)
     file(READ "${PROJECT_DIR}/${export_file}" exports)
     string(REGEX MATCHALL "FP_[A-Za-z0-9_]+" exported_names "${exports}")
