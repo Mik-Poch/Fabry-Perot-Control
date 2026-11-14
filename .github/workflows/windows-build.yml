@@ -38,7 +38,19 @@ jobs:
           $python = (Get-Command python).Source
           cmake -S . -B build -G "Visual Studio 17 2022" -A ${{ matrix.platform }} "-DPython3_EXECUTABLE=$python"
       - name: Build Release
-        run: cmake --build build --config Release --parallel 4
+        shell: pwsh
+        run: |
+          $buildOutput = & cmake --build build --config Release --parallel 4 2>&1
+          $buildExitCode = $LASTEXITCODE
+          $buildOutput | ForEach-Object { Write-Output $_ }
+          if ($buildExitCode -ne 0) {
+            # Keep MSVC failures visible in the run summary as well as raw logs.
+            $buildOutput | Where-Object { "$_" -match '(?:fatal )?error (?:C|LNK|MSB)\d+|warning C\d+' } | Select-Object -First 10 | ForEach-Object {
+              $diagnostic = "$_".Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+              Write-Output "::error::$diagnostic"
+            }
+          }
+          exit $buildExitCode
       - name: Run native, C ABI, ctypes, all-method accuracy and stage benchmarks
         run: ctest --test-dir build -C Release --output-on-failure --verbose
       - name: Publish measured asymmetry timings
