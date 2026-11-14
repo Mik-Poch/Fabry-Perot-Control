@@ -1,3 +1,7 @@
+get_filename_component(PROJECT_DIR "${PROJECT_DIR}" ABSOLUTE)
+if(DEFINED PACKAGE_DIR)
+    get_filename_component(PACKAGE_DIR "${PACKAGE_DIR}" ABSOLUTE)
+endif()
 file(READ "${PROJECT_DIR}/include/FPFringe.h" header)
 string(REGEX REPLACE "/\\*([^*]|\\*+[^*/])*\\*+/" "" declarations "${header}")
 if(declarations MATCHES "#|__declspec|__attribute__|__cdecl|extern|std::|FPF_API|FPF_CALL")

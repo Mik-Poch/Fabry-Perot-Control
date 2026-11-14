@@ -132,7 +132,20 @@ jobs:
       - name: Verify permanent public filenames and installed header
         run: cmake -DPROJECT_DIR=. -DPACKAGE_DIR=package -P tests/check_public_header.cmake
       - name: Verify FPFringe package and header
-        run: cmake -DPROJECT_DIR=. -DPACKAGE_DIR=package -P tests/check_fpfringe_header.cmake
+        shell: pwsh
+        run: |
+          $projectDir = (Get-Location).Path
+          $packageDir = Join-Path $projectDir 'package'
+          $validationOutput = & cmake "-DPROJECT_DIR=$projectDir" "-DPACKAGE_DIR=$packageDir" -P tests/check_fpfringe_header.cmake 2>&1
+          $validationExitCode = $LASTEXITCODE
+          $validationOutput | ForEach-Object { Write-Output $_ }
+          if ($validationExitCode -ne 0) {
+            $validationOutput | ForEach-Object {
+              $diagnostic = "$_".Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+              Write-Output "::error::$diagnostic"
+            }
+          }
+          exit $validationExitCode
       - name: Upload FPFringe DLL and public header
         uses: actions/upload-artifact@v4
         with:
