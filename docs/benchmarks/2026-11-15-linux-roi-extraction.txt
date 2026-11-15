@@ -1,0 +1,5 @@
+ROI,0,frame=512x512,left=84,top=84,side=344
+ROI,1,frame=640x480,left=325,top=65,side=312
+ROI,2,frame=480x640,left=63,top=263,side=316
+ROI,3,frame=1280x960,left=481,top=291,side=357
+PASS API3 crop: local compact/weak/single rings, geometry, original U16, capacity retry, invalid inputs, failures, concurrency and end-to-end legacy equivalence

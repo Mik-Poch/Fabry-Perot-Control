@@ -1,0 +1,7 @@
+/build*/
+/.vs/
+/.venv/
+__pycache__/
+*.pyc
+/data/test_frames/*
+!/data/test_frames/README.md

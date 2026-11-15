@@ -1,0 +1,28 @@
+symmetric,status=0,Ax=-0.00118021,Ay=0.00135404,Wx=0.00040156,Wy=-0.000271589,rings=6,sectors=16,center_error=0.0961806,rms=0.00354053
+displaced,status=0,Ax=0.000565173,Ay=0.000393128,Wx=-0.00496197,Wy=0.00201876,rings=4,sectors=16,center_error=0.337924,rms=0.00269519
+brightness,status=0,Ax=0.299503,Ay=-0.200706,Wx=-0.00035882,Wy=0.000378961,rings=5,sectors=16,center_error=0.154653,rms=0.00510517
+width,status=0,Ax=-0.0112721,Ay=0.00946805,Wx=-0.199456,Wy=0.164204,rings=6,sectors=16,center_error=0.108413,rms=0.00489193
+combined-opposite,status=0,Ax=0.287087,Ay=-0.190296,Wx=-0.199996,Wy=0.165025,rings=6,sectors=16,center_error=0.159984,rms=0.00560215
+combined-independent,status=0,Ax=0.307447,Ay=-0.19162,Wx=0.133204,Wy=0.108795,rings=6,sectors=16,center_error=0.16768,rms=0.00505186
+phase-0.050000,status=0,Ax=0.304767,Ay=-0.19087,Wx=0.137367,Wy=0.108545,rings=5,sectors=16,center_error=0.169046,rms=0.0039575
+phase-0.270000,status=0,Ax=0.307447,Ay=-0.19162,Wx=0.133204,Wy=0.108795,rings=6,sectors=16,center_error=0.16768,rms=0.00505186
+phase-0.530000,status=0,Ax=0.307378,Ay=-0.195948,Wx=0.13507,Wy=0.109641,rings=5,sectors=16,center_error=0.167276,rms=0.00533416
+phase-0.850000,status=0,Ax=0.306045,Ay=-0.192662,Wx=0.133341,Wy=0.109565,rings=5,sectors=16,center_error=0.183636,rms=0.00351872
+bits-8,status=0,Ax=0.303617,Ay=-0.192849,Wx=0.131773,Wy=0.10955,rings=5,sectors=16,center_error=0.188711,rms=0.00375524
+bits-10,status=0,Ax=0.303717,Ay=-0.192969,Wx=0.131729,Wy=0.108132,rings=5,sectors=16,center_error=0.189643,rms=0.00408733
+bits-12,status=0,Ax=0.303662,Ay=-0.193066,Wx=0.131682,Wy=0.10811,rings=5,sectors=16,center_error=0.189088,rms=0.00399588
+bits-14,status=0,Ax=0.303595,Ay=-0.193117,Wx=0.131703,Wy=0.108068,rings=5,sectors=16,center_error=0.189269,rms=0.00398582
+bits-16,status=0,Ax=0.303609,Ay=-0.193141,Wx=0.131696,Wy=0.108051,rings=5,sectors=16,center_error=0.189263,rms=0.00397602
+spatial-gradient,Ax=0.271083,Ay=-0.169266,Wx=-0.000730811,Wy=0.000687556
+center-sweep,status=0,Ax=0.000406355,Ay=0.000370192,Wx=-0.00311364,Wy=-0.00334571,rings=5,sectors=16,center_error=0.288857,rms=0.00325584
+center-sweep,status=0,Ax=-6.83672e-05,Ay=0.000233474,Wx=0.00368965,Wy=-0.00141357,rings=4,sectors=16,center_error=0.251173,rms=0.00243493
+center-sweep,status=0,Ax=-0.0001674,Ay=0.000715901,Wx=0.0014228,Wy=0.00246261,rings=4,sectors=16,center_error=0.272502,rms=0.00283538
+reversed-directions,status=0,Ax=-0.202219,Ay=0.271294,Wx=0.142905,Wy=-0.16093,rings=6,sectors=16,center_error=0.0726921,rms=0.00376291
+missing-sectors,status=0,Ax=0.200266,Ay=0.102931,Wx=-0.000362572,Wy=0.000150293,rings=6,sectors=15,center_error=0.0613655,rms=0.00346505
+small-roi,status=0,Ax=-5.18652e-05,Ay=0.00032022,Wx=-0.00108893,Wy=0.00151456,rings=5,sectors=16,center_error=0.0536711,rms=0.00442566
+large-roi,status=0,Ax=-0.0015411,Ay=0.00136714,Wx=0.000443128,Wy=-0.000315466,rings=7,sectors=16,center_error=0.104481,rms=0.00147991
+weak-outer,status=0,Ax=-0.000720226,Ay=0.000720226,Wx=0.00140099,Wy=-0.00140099,rings=5,sectors=16,center_error=0.000160969,rms=0.00196289
+mild-saturation,status=0,Ax=0.310329,Ay=0.00227673,Wx=0.00404956,Wy=-0.000418709,rings=2,sectors=13,center_error=0.0795123,rms=0.00997913
+ellipse,status=0,rms=0.0118985 (first harmonic cannot diagnose ellipticity)
+limited-aperture,status=0,rings=3
+PASS asymmetry accuracy, phase, quality, ABI guards, concurrent calls

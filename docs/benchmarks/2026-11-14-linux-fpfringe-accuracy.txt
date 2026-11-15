@@ -1,0 +1,17 @@
+analysis,320x320,method=0,status=0,cx=159.796,cy=159.305
+analysis,320x320,method=1,status=0,cx=159.8,cy=159.3
+analysis,320x320,method=2,status=0,cx=159.8,cy=159.3
+analysis,320x320,method=3,status=0,cx=159.801,cy=159.297
+analysis,640x480,method=0,status=0,cx=319.799,cy=239.302
+analysis,640x480,method=1,status=0,cx=319.8,cy=239.3
+analysis,640x480,method=2,status=0,cx=319.8,cy=239.3
+analysis,640x480,method=3,status=0,cx=319.8,cy=239.3
+analysis,1280x960,method=0,status=0,cx=639.8,cy=479.301
+analysis,1280x960,method=1,status=0,cx=639.8,cy=479.3
+analysis,1280x960,method=2,status=0,cx=639.8,cy=479.3
+analysis,1280x960,method=3,status=0,cx=639.799,cy=479.301
+analysis,960x1280,method=0,status=0,cx=479.8,cy=639.301
+analysis,960x1280,method=1,status=0,cx=479.8,cy=639.3
+analysis,960x1280,method=2,status=0,cx=479.8,cy=639.3
+analysis,960x1280,method=3,status=0,cx=479.8,cy=639.3
+PASS FPFringe: rectangular methods, ROI, direct validity, exact legacy equivalence, ABI and concurrency

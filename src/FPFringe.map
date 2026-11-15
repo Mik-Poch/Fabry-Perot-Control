@@ -1,0 +1,4 @@
+{
+    global: FPF_GetApiVersion; FPF_FindCenteredRoiU16; FPF_AnalyzeU16; FPF_AnalyzeAsymmetryU16;
+    local: *;
+};
