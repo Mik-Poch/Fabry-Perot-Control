@@ -106,10 +106,11 @@ See docs/fringe_asymmetry.md for indexing, numerical limits and explicit LabVIEW
 3/16/64 allocation. Existing VIs must remain unchanged.
 
 FPFringe is the independent successor DLL, with its own FPFringe.h/.def/.map and
-four FPF_ exports (API 2). Both DLLs link the static fp_core; neither DLL may
+four FPF_ exports (API 3). Both DLLs link the static fp_core; neither DLL may
 load the other. Only the ROI finder may construct a temporary candidate crop.
-Preserve the private ring-evidence validation used by the ROI finder; the public
-checker and its unused private wrapper are removed. Do not introduce a replacement
+ROI extraction uses candidate localization and locally normalized center fitting
+with bounded expansion retries; do not restore the removed post-fit full-frame
+ring-evidence gate. The public checker remains removed. Do not introduce a replacement
 pre-screen or mandatory checking stage. Analysis/asymmetry must normalize
 and process the exact supplied rectangle without ROI detection or crop copies.
 Use separate width/height and row stride width. Keep square wrappers and exact
@@ -122,6 +123,15 @@ allocations, camera ownership, fixed tracking ROI and complete-circle limits.
 
 FPFringe callers accept measurements only on status 0 and discard failed/NaN
 results. Keep all status values and numerical rejection criteria unchanged.
-FPF_GetApiVersion is 2 after removal of the checker; the legacy API version 2
+FPF_GetApiVersion is 3 after the square-crop ROI ABI change; the legacy API version 2
 is independent. Verify exactly four FPF_ exports and absence of the removed
 symbol in ctypes. Benchmark only ROI, A/B/C/D and asymmetry.
+
+FPF_FindCenteredRoiU16 has exactly seven parameters: U16 source, I32 width,
+height, requested side, caller U16 crop pointer, I32 capacity in pixels, I32[3]
+[left,top,side]. No public center output. Use candidate-extent automatic sizing
+with a modest margin, not the largest frame square; document the deterministic
+rule. A -2 status retains geometry and writes no crop pixels, other errors zero
+geometry and leave crop unchanged; overlap rejects before writes. Only after all
+localization/allocation and capacity checks copy original U16 rows bit-for-bit.
+Never change shared numerical algorithms to compensate for an ROI defect.

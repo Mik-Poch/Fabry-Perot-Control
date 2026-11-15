@@ -71,10 +71,10 @@ jobs:
         run: |
           if (Test-Path build/fpfringe_benchmark.csv) {
             "## FPFringe Windows ${{ matrix.arch }} Release" >> $env:GITHUB_STEP_SUMMARY
-            "| Image | Operation | Median ms | p95 ms | Successes | Failures |" >> $env:GITHUB_STEP_SUMMARY
-            "|---|---|---|---|---|---|" >> $env:GITHUB_STEP_SUMMARY
+            "| Image | Pattern | Operation | ROI side | Median ms | p95 ms | Successes | Failures |" >> $env:GITHUB_STEP_SUMMARY
+            "|---|---|---|---|---|---|---|---|" >> $env:GITHUB_STEP_SUMMARY
             Import-Csv build/fpfringe_benchmark.csv | ForEach-Object {
-              "| $($_.width)x$($_.height) | $($_.operation) | $($_.median_ms) | $($_.p95_ms) | $($_.successes) | $($_.failures) |" >> $env:GITHUB_STEP_SUMMARY
+              "| $($_.width)x$($_.height) | $($_.pattern) | $($_.operation) | $($_.roi_side) | $($_.median_ms) | $($_.p95_ms) | $($_.successes) | $($_.failures) |" >> $env:GITHUB_STEP_SUMMARY
             }
           }
       - name: Verify DLL architecture and exact exports

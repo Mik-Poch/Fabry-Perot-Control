@@ -1,157 +1,156 @@
-# FPFringe validation and performance, 2026-11-14
+# FPFringe API 3: ROI extraction validation, 2026-11-15
 
-## Verified on Linux x86_64
+## Original failure and scope
 
-GCC 14.2.0, C++17, Release; Python 3.12 ctypes. The full Release CTest run
-passed 18 runnable entries with three optional experimental-image entries
-explicitly skipped. Existing legacy analysis, U16/selector regression, concurrency,
-public C/C++ header and ctypes tests passed without relaxed tolerances. Dedicated
-FPFringe API 2 tests exercise four C exports, plain C99 function-pointer signatures,
-C/cdecl calls, output canaries, deterministic failure outputs, nulls, overflow,
-invalid method IDs, overlap rejection and concurrent independent buffers across
-all three processing functions. The old public header and export definitions
-are unchanged.
+The fetched branch contained two user commits beyond 953d51a: f11698f had
+already removed a strict post-fit full-frame fringe-evidence gate; c6e3e2e
+changed the public header to a crop/capacity prototype but left an extra center
+output. The implementation, private function, clients and tests still used the
+old six-argument geometry/center interface. This mismatch prevented a coherent
+build. The old automatic sizing also selected the largest centered frame square,
+which could surround compact fringes with excessive dark background.
 
-ASan+UBSan RelWithDebInfo: all 12 runnable entries passed, one optional image
-entry skipped, no sanitizer findings. The affected FPFringe targets were rebuilt
-and rechecked after the final rectangular/angular/ROI fixture additions.
-The installed-package checks passed for both public headers. ELF inspection
-found exactly four FPF_ exports in FPFringe and the same four FP_ exports in
-FPAnalyzer. ldd confirmed no FPAnalyzer runtime dependency of FPFringe.
+The earlier post-fit evidence gate could reject a successfully fitted local
+pattern; this refactor keeps that gate removed. Image0180.bmp was not available,
+so its reported failure and improvement cannot be independently verified here.
+The new local fit and extent-based sizing address the design issues without
+changing phase/finesse/asymmetry algorithms.
 
-## Numerical compatibility and geometry
+## Implemented API and localization
 
-Before refactoring, the built legacy DLL-equivalent shared library from commit
-e6b80d0 was retained outside the checkout. The new library was compared with
-that frozen binary using the same square U16 samples, all four selector IDs and
-all asymmetry summary/sector fields at 8/10/12/14/16 effective bits. All 480
-output comparisons were exact (including paired NaNs), and statuses matched.
-This is a Linux same-toolchain comparison, not a cross-architecture bitwise claim.
-The repeatable command accepts any same-architecture API-2 baseline:
+FPF_GetApiVersion is now 3. The public ROI function has exactly seven parameters:
+source U16, width, height, requested side, output U16 crop, capacity in U16
+**elements**, and I32[3] [left,top,side]. The fitted center stays internal.
+There are still exactly four undecorated FPF exports; the checker remains absent.
+The new plain-C header contract test guards the complete seven-argument prototype.
 
-```
-python examples/fpfringe_ctypes_test.py FPFringe.dll previous/FPAnalyzer.dll
-```
+Candidate detection reuses the existing full-frame contrast/component detector.
+Center fitting uses locally normalized private candidate crops, retrying sides
+1, 1.5 and 2 times the original candidate side if fitting fails (bounded by the
+frame and skipping duplicate capped sizes). Successful fitting immediately ends
+retries; no strict ring count, peak prominence or analysis-success gate follows.
+The final crop copies original U16 rows without resampling or intensity changes.
 
-The native suite also compares square outputs against the concurrently built
-legacy DLL. No numerical deviations were observed in the checked square cases.
-No old threshold, iteration count, selector ID, output definition or public
-calling convention was changed. Only private rectangular geometry was generalized,
-with legacy square wrappers retaining the earlier arithmetic operation order.
+For initial candidate side D, midpoint (bx,by), fitted center (cx,cy), automatic
+sizing uses E=D+2*max(abs(cx-bx),abs(cy-by)), a per-side margin max(4,0.05*E),
+and S0=max(24,ceil(E+2*margin)). The final side is capped by the largest centered
+square that fits the frame, but S0 is the desired size rather than that maximum.
+Offsets are nearest valid integers with <=0.75-pixel center displacement per
+axis. Exact positive sizes are never silently resized.
 
-All A/B/C/D methods succeeded on 320x320, 640x480, 1280x960 and 960x1280
-synthetic fixtures. Tests require center error <0.7 pixels, phase error <0.035
-cycles and positive finesse. Full measured centers/statuses are in
-[the accuracy log](benchmarks/2026-11-14-linux-fpfringe-accuracy.txt).
-Known signed brightness/linewidth gradients pass on square and 400x320/320x400
-inputs (per-component absolute tolerance 0.04). All 16 summary and 64 sector
-values are compared on equivalent square inputs. An off-center 640x480 fixture
-returns its independently known full-image center, without a hidden square crop.
+Status -2 returns valid geometry and leaves every crop pixel untouched; callers
+can allocate side*side and retry on the same frame. Other failures initialize
+ROI to zero and leave pixels untouched. Known overlap returns -1 before any
+writes. Full parameter order, formulas, statuses and LabVIEW allocation guidance
+are in [the API guide](fpfringe.md).
 
-ROI tests cover zero/positive requested sizes, exact 1x1/normal sizes, automatic
-sizing, weak outer ring support, off-center centers, square geometry, bounds,
-subpixel full-frame center accuracy and <=0.75-pixel centering tolerance. An
-impossible exact centered size fails with zero ROI and NaN center. Automatic
-sizing takes the maximum centered square rather than a tight contrast box;
-hardware increment rules remain the caller's responsibility.
+## Synthetic and ABI validation
 
-## API 2 cleanup: direct measurement validity
+Linux x86_64, GCC 14.2.0, Release: 19 CTest entries passed, three optional image
+entries skipped for missing BMPs. ASan+UBSan RelWithDebInfo: 13 passed, one image
+entry skipped, no sanitizer findings. These are executed entries, not zero-test
+runs. Existing legacy tests and their numerical tolerances remain unchanged.
 
-The standalone checker export, declaration, implementation and unused private
-wrapper have been removed. FPF_GetApiVersion now returns 2, independently of
-the unchanged legacy FPAnalyzer API version 2. The four retained signatures are
-unchanged; no replacement checking stage or analyzable output was introduced.
+The new dedicated ROI suite covers centered/off-center patterns, square,
+landscape and portrait images, compact 1280x960 frames, bright centers with weak
+outer rings, a single-ring geometric-fit case, automatic/exact/1x1 sizes,
+centering and frame bounds, every returned U16 sample, output canaries and tail,
+zero/short/exact capacity and retry, nulls, negative capacity, invalid dimensions,
+overflow, impossible geometry, absent candidates, unreliable center fits,
+known/partial overlaps and eight concurrent independent extractions.
 
-The private evidence() and findCenteredRoi() bodies were compared with the
-pre-cleanup source and are unchanged. The retained exported ROI, analysis and
-asymmetry function bodies are also unchanged. Numerical Analysis/Methods/Asymmetry
-core files and all legacy source, headers, exports and tests were untouched.
+[Measured synthetic geometry](benchmarks/2026-11-15-linux-roi-extraction.txt):
 
-A same-toolchain FPFringe API-1 binary was retained before cleanup. Comparing
-its retained calls against API 2 gave **882 exact output comparisons and 70
-identical statuses**: ROI geometry/subpixel centers for automatic, exact and
-invalid sizes; A/B/C/D metrics and all 16/64 asymmetry fields; 8/10/12/14/16-bit
-square inputs and landscape/portrait images. Paired NaNs and failed statuses
-were compared explicitly. No changed numerical outputs were observed.
+| Synthetic frame | True center | Returned [left,top,side] |
+|---|---|---|
+| 512x512 | (255.3,255.7) | [84,84,344] |
+| 640x480 | (480.3,220.7) | [325,65,312] |
+| 480x640 | (220.3,420.7) | [63,263,316] |
+| 1280x960, compact | (659.0,469.4) | [481,291,357] |
 
-The native suite retains all ROI/geometry/rectangle/phase/finesse/asymmetry,
-canary, invalid-argument, overlap and concurrent-call checks. It additionally
-verifies a two-ring ROI still succeeds while strict method B returns -4 with
-NaN metrics. Blank images return -4 with NaN metrics for A/B/C/D and invalid
-[NaN,NaN,0,0] sectors for asymmetry. No numerical tolerances were weakened.
-The ctypes suite confirms the removed symbol cannot be resolved and still
-performs 480 exact old-FPAnalyzer/new-FPFringe comparisons.
+All samples in successful crops match the corresponding original U16 source
+values exactly. Center placement is checked against synthetic truth within
+0.75 pixel per axis; compact/weak patterns produce crops below 512 pixels wide,
+not near-full-frame squares. A single ring can be located without requiring
+three peaks for subsequent reference-method success.
 
-Continuous LabVIEW measurement calls analysis directly, accepts status 0 subject
-to application quality checks, and discards nonzero/NaN results. Ring/sector
-counts and harmonic RMS remain additional asymmetry quality indicators. Handling
-consecutive failures, reacquisition and any piezo response belong to LabVIEW.
-No regulator logic or extra validity output is implemented in the DLL.
+The end-to-end test extracts the compact 1280x960 fixture, then passes exactly
+the returned square to all A/B/C/D selectors and the asymmetry function. All
+succeed and match legacy calls supplied with the identical square samples,
+including all 16 summary and 64 sector outputs and paired NaNs.
 
-## Measured Release timings
+The pre-refactor FPFringe API-2 library was retained outside the checkout.
+Direct old/new analysis comparisons on five effective bit depths and square,
+landscape and portrait images gave **672 exact output values and 35 identical
+statuses**, including failures/NaNs. Both retained analysis bodies and all shared
+Analysis/Methods/Asymmetry code are unchanged. The existing ctypes suite also
+passes 480 old-FPAnalyzer/new-FPFringe output comparisons and verifies API 3,
+the removed symbol's absence, crop canaries and exact source pixels.
 
-[Full CSV](benchmarks/2026-11-14-linux-fpfringe.csv), 64-bit Linux, two warm-ups
-and 21 measured end-to-end C calls per row, rendering excluded. Median is index
-10; nearest-rank p95 is index 19. All 378 measured calls succeeded, no failures.
-These are measured shared-cloud CPU latencies, not fabricated Windows timings
-or a real-time guarantee. Input parameters are in tests/benchmark_fpfringe.cpp.
+## Release performance
 
-| Image | Operation | Median ms | p95 ms | Success/failure |
-|---|---|---|---|---|
-| 320x320 | ROI | 5.094 | 5.821 | 21/0 |
-| 320x320 | A | 1.120 | 1.202 | 21/0 |
-| 320x320 | B | 4.700 | 5.154 | 21/0 |
-| 320x320 | C | 20.331 | 21.390 | 21/0 |
-| 320x320 | D | 6.620 | 7.213 | 21/0 |
-| 320x320 | asymmetry | 5.525 | 6.321 | 21/0 |
-| 640x480 | ROI | 12.305 | 16.218 | 21/0 |
-| 640x480 | A | 2.518 | 2.789 | 21/0 |
-| 640x480 | B | 13.026 | 14.825 | 21/0 |
-| 640x480 | C | 29.952 | 40.576 | 21/0 |
-| 640x480 | D | 16.033 | 18.106 | 21/0 |
-| 640x480 | asymmetry | 13.987 | 16.759 | 21/0 |
-| 1280x960 | ROI | 41.062 | 44.535 | 21/0 |
-| 1280x960 | A | 6.049 | 6.482 | 21/0 |
-| 1280x960 | B | 43.898 | 48.211 | 21/0 |
-| 1280x960 | C | 51.005 | 66.646 | 21/0 |
-| 1280x960 | D | 54.522 | 57.519 | 21/0 |
-| 1280x960 | asymmetry | 43.462 | 60.521 | 21/0 |
+[Full measured CSV](benchmarks/2026-11-15-linux-fpfringe.csv). The benchmark keeps
+ROI/A/B/C/D/asymmetry on 320x320, 640x480 and 1280x960 fixtures and adds compact
+and weak-outer-ring 1280x960 ROI cases. It records pattern and returned side.
+Two warm-ups and 21 measured calls per row: 420 successes, zero failures across
+20 rows. Rendering and caller buffer allocation are outside timing; ROI timing
+includes localization, local fitting, capacity validation and raw pixel copying.
+Median is index 10, nearest-rank p95 index 19. Results below are Linux x86_64
+Release observations, not fabricated Windows timings or a hard real-time claim.
 
-## Windows CI and manual validation
+| Frame | Pattern | Crop side | Median ms | p95 ms | Success/failure |
+|---|---|---|---|---|---|
+| 320x320 | wide | 319 | 5.088 | 5.851 | 21/0 |
+| 640x480 | wide | 479 | 10.200 | 10.943 | 21/0 |
+| 1280x960 | wide | 959 | 33.491 | 34.945 | 21/0 |
+| 1280x960 | compact | 357 | 4.087 | 4.181 | 21/0 |
+| 1280x960 | weak_outer | 403 | 4.725 | 5.237 | 21/0 |
 
-The existing Windows matrix builds MSVC Win32/x86 and x64 with matching Python.
-It tests both DLLs, inspects machine type and exact undecorated exports, checks
-that FPFringe does not depend on FPAnalyzer.dll, verifies installed headers and
-uploads separate FPFringe-windows-x86/x64 and FPAnalyzer-windows-x86/x64 packages.
-Windows results must be read from the workflow associated with the pushed code;
-local Linux validation does not establish MSVC results. Windows measured timings
-are recorded in fpfringe_benchmark.csv inside each test-report artifact and in
-its Actions job summary. No Windows numeric timings are substituted here.
+Large frame-spanning patterns can legitimately reach the centered boundary cap;
+compact patterns use the detected extent. No phase/finesse/asymmetry speedup is
+claimed: their numerical implementations were not changed. Shared-host timing
+variability prevents treating these numbers as a calibrated performance gain.
+Windows runners record the same CSV and job-summary table per architecture.
 
-None of Image0803.bmp, Image0792.bmp, Image0699.bmp, Image0855.bmp or Image0020.bmp
-is available in the workspace. No experimental result, including the earlier
-Image0020 auto-ROI failure, was fabricated or declared fixed on that actual image.
-examples/fpfringe_validate.py provides the exact optional command and explicit
-same-pixel old/new comparison when those files become available.
+## Windows packaging and remaining manual checks
 
-No actual NI Wizard import, new LabVIEW VI execution, Windows 11 camera driver
-integration or sustained acquisition loop was available. On the user's PC,
-verify x86 loading in 32-bit LabVIEW, all four import/CLFN signatures and API version 2, explicit 4/2/4/16/64 output allocations, camera-applied
-ROI increments and full-frame coordinate mapping. Keep tracking ROI fixed.
-See [the complete API and manual CLFN guide](fpfringe.md).
+The existing Windows Win32/x86 and x64 matrix builds and tests both DLLs with
+matching Python bitness, validates exact exports/architecture and no runtime
+FPAnalyzer dependency, checks installed header hashes and uploads separate
+FPFringe-windows-x86/x64 and retained FPAnalyzer-windows-x86/x64 packages.
+Use the workflow associated with the pushed commit for its actual Windows
+outcome; Linux results do not establish MSVC execution. Each test-report artifact
+contains the measured CSV and complete CTest log.
 
-## Files modified by the API 2 cleanup
+No experimental BMPs, including prioritized Image0180.bmp, are present in the
+workspace. The compact synthetic fixture is representative, **not Image0180**
+and not fabricated experimental evidence. Its coordinates are not tuned to force
+the old diagnostic ROI. The updated optional validator accepts Image0180 plus
+the five earlier frames, checks source pixels, and compares old/new analyses on
+the DLL-returned crop. Available-frame ROI failures produce a failing status;
+missing files are explicitly skipped.
 
-- include/FPFringe.h.
-- src/FPFringe.cpp, src/FPFringe.def, src/FPFringe.map.
-- src/FringeDetection.cpp, src/FringeDetection.h.
-- tests/test_fpfringe.cpp, tests/test_fpfringe_c.c,
-  tests/check_fpfringe_header.cmake, tests/benchmark_fpfringe.cpp.
-- examples/fpfringe_ctypes_test.py, examples/fpfringe_validate.py.
-- .github/workflows/windows-build.yml.
-- README.md, AGENTS.md, docs/fpfringe.md, this validation report.
-- docs/benchmarks/2026-11-14-linux-fpfringe.csv and
-  docs/benchmarks/2026-11-14-linux-fpfringe-accuracy.txt.
+No actual NI Wizard/CLFN execution or camera acquisition was performed. On the
+user's PC, replace the old center-output node with the exact seven-parameter API
+3 signature, allocate I32[3] and caller-owned U16 storage, pass capacity in
+**pixels**, handle -2 without using crop pixels, trim/reshape side*side only on
+success, and use x86 with 32-bit LabVIEW. Verify actual camera ROI increments and
+full-frame coordinate offsets. Keep camera tracking ROI fixed between deliberate
+initialization/reacquisition operations. Multi-pattern/glare scenes, weak rings
+below the contrast detector and fits that remain unreliable after all bounded
+retries remain experimental limitations.
 
-CMakeLists.txt, the shared numerical algorithms and all FPAnalyzer source,
-headers, export definitions and legacy tests are unchanged by this cleanup.
+## Changed files
+
+- include/FPFringe.h; src/FPFringe.cpp; src/FringeDetection.cpp/.h.
+- CMakeLists.txt; tests/test_fpfringe_roi.cpp (new); tests/test_fpfringe.cpp;
+  tests/test_fpfringe_c.c; tests/check_fpfringe_header.cmake;
+  tests/benchmark_fpfringe.cpp.
+- examples/fpfringe_ctypes_test.py; examples/fpfringe_validate.py.
+- .github/workflows/windows-build.yml (pattern/ROI-side timing summaries).
+- README.md; AGENTS.md; docs/fpfringe.md; this report.
+- docs/benchmarks/2026-11-15-linux-fpfringe.csv and
+  docs/benchmarks/2026-11-15-linux-roi-extraction.txt (new measurements).
+
+All legacy headers, exports, algorithms and tests are unchanged. The FPF export
+names remain unchanged; only the ROI function's ABI and API version are revised.

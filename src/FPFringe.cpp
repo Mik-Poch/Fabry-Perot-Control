@@ -7,6 +7,7 @@ extern "C" {
 #include "FringeDetection.h"
 #include <algorithm>
 #include <climits>
+#include <cstring>
 #include <cstdint>
 #include <initializer_list>
 #include <limits>
@@ -30,17 +31,36 @@ std::size_t count(int width,int height) {
 void invalidSectors(double* s) {if(s) for(int i=0;i<16;++i) {s[4*i]=s[4*i+1]=missing;s[4*i+2]=s[4*i+3]=0;}}
 }
 
-extern "C" FPF_INTERNAL_EXPORT int FPF_INTERNAL_CALL FPF_GetApiVersion(void) {return 2;}
+extern "C" FPF_INTERNAL_EXPORT int FPF_INTERNAL_CALL FPF_GetApiVersion(void) {return 3;}
 
 extern "C" FPF_INTERNAL_EXPORT int FPF_INTERNAL_CALL FPF_FindCenteredRoiU16(
-    const unsigned short* pixels,int width,int height,int requested,int* roi,double* center) {
+    const unsigned short* pixels,int width,int height,int requested,
+    unsigned short* crop,int capacity,int* roi) {
     const auto n=count(width,height);
-    if(!disjoint({{pixels,n*2},{roi,4*sizeof(int)},{center,2*sizeof(double)}})) return -1;
-    if(roi) std::fill_n(roi,4,0);
-    if(center) std::fill_n(center,2,missing);
-    if(!pixels || !roi || !center || !n || requested<0 || requested>width || requested>height) return -1;
-    try {return fp::findCenteredRoi(fp::analysisView(pixels,n),width,height,requested,roi,center);}
-    catch(...) {return -4;}
+    // A non-null zero-capacity pointer must still be a disjoint one-element
+    // placeholder. Check storage before writes, including partial-null calls.
+    const auto cropBytes=static_cast<std::size_t>(std::max(1,capacity))*sizeof(unsigned short);
+    if(!disjoint({{pixels,std::max<std::size_t>(1,n)*sizeof(unsigned short)},
+                  {crop,cropBytes},{roi,3*sizeof(int)}})) return -1;
+    if(roi) std::fill_n(roi,3,0);
+    if(!pixels || !crop || !roi || !n || capacity<0 || requested<0 || requested>width || requested>height) return -1;
+    try {
+        fp::Roi located;
+        const int status=fp::findCenteredRoi(fp::analysisView(pixels,n),width,height,requested,located);
+        if(status) return status;
+        roi[0]=located.left;roi[1]=located.top;roi[2]=located.size;
+        const auto required=static_cast<std::size_t>(located.size)*located.size;
+        if(required>static_cast<std::size_t>(capacity)) return -2;
+        // No allocation/analysis remains after the first output-pixel write.
+        for(int y=0;y<located.size;++y)
+            std::memcpy(crop+static_cast<std::size_t>(y)*located.size,
+                        pixels+static_cast<std::size_t>(y+located.top)*width+located.left,
+                        static_cast<std::size_t>(located.size)*sizeof(unsigned short));
+        return 0;
+    } catch(...) {
+        std::fill_n(roi,3,0);
+        return -4;
+    }
 }
 
 extern "C" FPF_INTERNAL_EXPORT int FPF_INTERNAL_CALL FPF_AnalyzeU16(

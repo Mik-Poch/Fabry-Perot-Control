@@ -12,10 +12,9 @@ enum {
 
 int FPF_GetApiVersion(void);
 
-/* Centered square U16 crop: requested size 0=auto, >0=exact.
- * roi_pixels has roi_capacity_pixels U16 elements; no DLL allocation.
- * roi_out I32[3] = [left, top, side]; center_out DBL[2] = full-frame center.
- * On -2, geometry/center are valid and roi_pixels remains unchanged. */
+/* Centered original-U16 crop; requested size 0=auto, >0=exact.
+ * roi_capacity_pixels counts U16 elements; roi_out I32[3]=[left,top,side].
+ * On -2, geometry is valid and roi_pixels is untouched. See docs/fpfringe.md. */
 int FPF_FindCenteredRoiU16(
     const unsigned short image_pixels[],
     int image_width,
@@ -23,8 +22,7 @@ int FPF_FindCenteredRoiU16(
     int requested_roi_size,
     unsigned short roi_pixels[],
     int roi_capacity_pixels,
-    int roi_out[],
-    double center_out[]);
+    int roi_out[]);
 
 /* Analyze the exact supplied rectangle; methods 0=A, 1=B, 2=C, 3=D. */
 int FPF_AnalyzeU16(

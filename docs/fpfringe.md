@@ -1,4 +1,4 @@
-# FPFringe API 2
+# FPFringe API 3
 
 FPFringe is a separate C++17 analysis library for Windows x86 (32-bit LabVIEW
 on Windows 11 x64) and Windows x64. The permanent files are **FPFringe.dll** and
@@ -18,8 +18,9 @@ int FPF_FindCenteredRoiU16(
     int image_width,
     int image_height,
     int requested_roi_size,
-    int roi_out[],
-    double center_out[]);
+    unsigned short roi_pixels[],
+    int roi_capacity_pixels,
+    int roi_out[]);
 
 int FPF_AnalyzeU16(
     const unsigned short image_pixels[],
@@ -36,18 +37,19 @@ int FPF_AnalyzeAsymmetryU16(
     double sector_out[]);
 ```
 
-Exports have these exact undecorated names. FPF_GetApiVersion returns **2**;
-FP_GetApiVersion in the old DLL still returns **2**, independently.
-FPFringe API 2 removes the standalone checker from API 1. Resolve only the four
-exports above and use each analysis call's return status to validate its outputs.
-The retained function signatures, numerical definitions and ROI behavior are
-unchanged. The new header is plain C,
+Exports have these exact undecorated names. FPF_GetApiVersion returns **3**;
+FP_GetApiVersion in the legacy DLL still returns **2**, independently. API 3
+changes the ROI function's binary signature: it now returns original U16 crop
+pixels and I32[3] geometry, with no independent center output. Update any API-2
+CLFN/generated VI before loading this DLL; the old six-argument call is unsafe.
+No checker export is reintroduced. The two analysis signatures and numerical
+behavior remain unchanged. The public header is plain C,
 without preprocessor dependencies, platform annotations or C++ linkage blocks.
 C++ callers wrap the include in their own `extern "C"` block. The new header uses unsized arrays, carrying forward the earlier Wizard-parser
 simplification without changing any intended C ABI type. Fixed C array bounds
 would not allocate LabVIEW arrays either: array parameters decay to pointers.
-Callers must supply the explicit lengths documented below (ROI 4, center 2,
-metrics 4, asymmetry 16, sectors 64).
+Callers must supply explicit lengths: ROI geometry 3 I32, crop capacity in U16
+elements, metrics 4 DBL, asymmetry 16 DBL and sectors 64 DBL.
 
 ## Common image and storage contract
 
@@ -62,48 +64,92 @@ Int is I32, unsigned short is U16, double is IEEE-754 DBL.
 All required pointers must be non-null, allocated, correctly aligned, mutually
 disjoint and valid throughout the call. A raw C pointer does not convey its
 allocation length, so the DLL cannot detect short arrays. No output memory is
-allocated, resized, freed or transferred across the ABI. Per-call workspaces
+allocated, resized, freed or transferred across the ABI. The ROI extractor
+writes only side*side valid U16 elements after a successful capacity check;
+unused output tail stays unchanged. Per-call workspaces
 are private to the DLL. All calls are stateless/reentrant; concurrent callers
 must use independent output buffers.
 
 Known overlapping storage returns -1 **before initialization**, leaving outputs
 untouched and invalid, including when an output overlaps the source. Otherwise,
-non-null writable outputs are initialized before other validation: ROI to zeros,
-DBL outputs to NaN, sector diagnostics to [NaN,NaN,0,0].
+non-null geometry/measurement outputs are initialized before other validation:
+ROI to [0,0,0], analysis DBL outputs to NaN and sectors to [NaN,NaN,0,0]. The crop
+buffer is never initialized or changed on failure, including insufficient capacity.
 Invalid addresses/undersized buffers remain caller errors. C++ resource and
 processing exceptions are caught at the C boundary and return -4.
 
 ## Responsibilities and outputs
 
-### FPF_FindCenteredRoiU16: occasional camera setup/reacquisition
+### FPF_FindCenteredRoiU16: localize and extract a centered raw square
 
-The finder returns geometry only; it does not return cropped image pixels or
-configure camera hardware. It uses the proven contrast-component ROI locator as
-an initial candidate, constructs a private temporary candidate image, and fits
-its robust gradient center. It converts that independently measured subpixel
-center to full-frame coordinates, verifies two-ring angular/radial evidence,
-and centers the final square using integer offsets.
+Use this operation during camera setup/reacquisition. It returns a U16 square
+crop for immediate numerical analysis and its **[left,top,side]** I32[3] geometry
+in the full frame. The fitted subpixel center is internal and is not an output.
+Camera hardware is never configured by the DLL.
 
-`roi_out` is I32[4] = **[left,top,width,height]**, zero-based; width=height.
-`center_out` is DBL[2] = **[center_x_full,center_y_full]**, independently fitted,
-never replaced by the ROI midpoint. Offsets are rounded to nearest integers
-so each relative center is normally within 0.5 pixel of `(S-1)/2` (required
-engineering tolerance <=0.75 pixel). No clamping to an off-center ROI occurs.
+1. **Candidate localization:** normalize the full frame only for internal
+   calculations and reuse the established downsampling/local-contrast/connected
+   component detector. Its square candidate includes its existing 8% extent
+   margin. The final center is not fitted to the large dark full frame.
+2. **Local geometric fit:** copy the candidate into a private temporary U16
+   region, normalize that region locally and run the unchanged robust gradient
+   center estimator. If it fails, retry regions of 1.5 and 2 times the original
+   candidate side (ceil, minimum 24, capped by the frame's shorter side), about
+   the same candidate midpoint and bounded by the frame. Duplicate capped sizes
+   are skipped. At most three fits run; successful fitting stops retries. Convert
+   its subpixel center to full-frame coordinates. There is no post-fit ring-count,
+   peak-prominence, full-frame evidence or analysis-success gate.
+3. **Geometry and copy:** choose a square side, round offsets to the closest
+   valid integers and require center displacement from the square midpoint
+   <=0.75 pixels on each axis. Validate capacity before writing any pixel, then
+   copy source rows without intensity/geometry changes.
 
-Requested size <0 is invalid. A positive size is exact: if it exceeds the frame
-or cannot fit while centered, return -1 with invalid outputs. Requested 0 uses
-the largest centered square supported by the frame, starting with
-`floor(2*min(cx,cy,width-1-cx,height-1-cy)+1)`. This deliberately retains weak
-outer rings instead of choosing the earlier tight contrast bounding box. It is
-not a promise of a minimum-bandwidth camera ROI. A usable automatic square must
-be at least 24 pixels wide. An exact positive request may be smaller, including
-1x1; such geometry is not a promise that its future acquired image is analyzable. A missing region/ring evidence returns -3; failed
-center fitting or unusable automatic geometry returns -4. All failures retain
-zero ROI and NaN center outputs.
+Automatic sizing (`requested_roi_size=0`) is deterministic. Let D be the initial
+candidate side, (bx,by) its midpoint, and (cx,cy) the fitted full-frame center:
 
-Camera offset/size increments, hardware constraints and verification of the
-actually applied ROI belong to LabVIEW. Keep the measured center separate from
-any hardware-rounded rectangle.
+```
+d = max(abs(cx-bx), abs(cy-by))
+E = D + 2*d
+padding_per_side = max(4, 0.05*E)
+S0 = max(24, ceil(E + 2*padding_per_side))
+M = floor(2*min(cx,cy,width-1-cx,height-1-cy) + 1)
+side = min(S0, M, width, height)
+```
+
+This retains the detected extent, adds a modest trough/outer-ring margin and
+accounts for the difference between bounding-box and fitted center. It does not
+select the largest possible frame square unless that is the needed boundary
+limit. Automatic side <24 returns -4. Initial candidate overestimation or weak
+outer rings below its contrast threshold remain limitations; no real camera
+accuracy guarantee follows from the sizing heuristic.
+
+For positive requested size, use that side **exactly**, even if smaller than a
+useful analysis image. Negative size is -1. Round `(cx-(side-1)/2,cy-(side-1)/2)`
+and constrain offsets to the frame; if no valid offsets satisfy the 0.75-pixel
+centering tolerance, return -1. No padding, interpolation, resizing or silent
+side adjustment is applied. The center is fitted geometry, never a brightest
+pixel or an assigned ROI midpoint.
+
+`roi_pixels` is caller-owned U16 storage, flat row-major **side x side**. The
+capacity is **U16 elements, not bytes**, and must be nonnegative. All returned
+samples are bit-for-bit copies:
+`roi_pixels[y*side+x]=image_pixels[(top+y)*image_width+left+x]`.
+Source pixels remain unchanged. On success exactly side*side values are valid;
+the tail remains untouched. No DLL allocator may resize a LabVIEW array pointer.
+
+If capacity is too small, return **-2**, populate the valid three-element geometry
+and write **no pixels**. Retry with at least side*side U16 elements. Every pointer
+must remain non-null, including a zero-capacity query: provide a disjoint
+allocated one-element U16 placeholder. Known overlaps return -1 before all
+writes. Other errors (-1/-3/-4) leave crop storage unchanged and geometry zero.
+A missing candidate is -3, failed local center fitting/resource failure is -4.
+
+For one call, allocate min(width,height)^2 U16 elements (dimensions/product must
+fit I32). Alternatively query capacity 0, allocate the returned side^2 and retry
+on the **same source frame**; querying/retrying repeats localization. Pass the
+successful crop directly to either analysis function with width=height=side.
+Camera ROI increments, actual applied offsets and hardware settings remain
+LabVIEW responsibilities; a proposed ROI is not confirmation of camera settings.
 
 ### FPF_AnalyzeU16: direct numerical measurement
 
@@ -181,9 +227,9 @@ voltages, hardware commands or frame history is implemented.
 |---|---|---|
 | 0 | success | Function-specific result valid; asymmetry correlation may be NaN and sectors have flags. |
 | -1 | invalid argument or requested ROI geometry | Initialized invalid outputs; overlapping storage is the no-write exception. |
-| -2 | reserved future capacity code | Never returned by this API version. |
-| -3 | ROI finder could not detect a suitable fringe region | ROI zero, center NaN. Other functions do not return -3. |
-| -4 | unreliable numerical result or processing/resource failure | DBL arrays NaN, sectors invalid; ROI zero where applicable. |
+| -2 | ROI crop capacity insufficient | Valid [left,top,side], crop untouched; allocate side*side U16 and retry. |
+| -3 | ROI finder could not detect a suitable fringe region | ROI zero, crop untouched. Other functions do not return -3. |
+| -4 | unreliable numerical result or processing/resource failure | Analysis DBL arrays NaN, sectors invalid; finder ROI zero and crop untouched. |
 | -5 | invalid analysis selector | AnalyzeU16 metrics NaN. |
 
 The analysis functions perform their own numerical validity checks. A separate
@@ -197,9 +243,10 @@ analyses return -4.
 
 ## LabVIEW acquisition and CLFN setup
 
-During initialization, LabVIEW acquires a full frame and calls the finder. It
-adapts returned offsets/sizes to hardware increments, configures the camera and
-records the **actual applied** settings. During tracking, acquire directly from
+During initialization, LabVIEW acquires a full frame and calls the extractor.
+It can immediately analyze the returned U16 square, or adapt the returned
+coordinates to camera increments, configure hardware and record the **actual
+applied** settings. During tracking, acquire directly from
 a **fixed camera ROI**, call FPF_AnalyzeU16 and/or FPF_AnalyzeAsymmetryU16 directly,
 and check each call's returned status before using its outputs.
 Changing the ROI each frame can remove the center displacement a future
@@ -209,7 +256,8 @@ All analysis centers are relative to their supplied image. Convert to full-frame
 coordinates using actual camera offsets:
 `cx_full=actual_camera_left+cx_local`, `cy_full=actual_camera_top+cy_local`.
 Never substitute the originally proposed ROI for hardware-applied coordinates.
-The finder alone returns full-frame center coordinates.
+The extractor returns full-frame ROI coordinates only; center outputs from the
+analysis functions are relative to their own input image or returned crop.
 
 Use the x86 DLL for **32-bit LabVIEW even on Windows 11 x64**. Use x64 only with
 64-bit LabVIEW. Import the matching FPFringe.h through NI's Wizard, or configure
@@ -225,14 +273,35 @@ in exactly the prototype order:
 | Function | Remaining CLFN parameters |
 |---|---|
 | GetApiVersion | none |
-| FindCenteredRoiU16 | requested size I32 value; roi_out 1D I32[4] Array Data Pointer output; center_out 1D DBL[2] Array Data Pointer output |
+| FindCenteredRoiU16 | requested size I32 value; roi_pixels 1D U16 Array Data Pointer output; capacity I32 value (elements); roi_out 1D I32[3] Array Data Pointer output |
 | AnalyzeU16 | method I32 value; metrics_out 1D DBL[4] Array Data Pointer output |
 | AnalyzeAsymmetryU16 | asymmetry_out 1D DBL[16] Array Data Pointer output; sector_out 1D DBL[64] Array Data Pointer output |
 
+For the ROI extractor, configure CLFN parameters in this exact order:
+
+| Parameter | LabVIEW configuration |
+|---|---|
+| image_pixels | 1D U16 Array Data Pointer, input |
+| image_width | I32, value |
+| image_height | I32, value |
+| requested_roi_size | I32, value |
+| roi_pixels | 1D U16 Array Data Pointer, caller-allocated output |
+| roi_capacity_pixels | I32, value; count of U16 elements |
+| roi_out | 1D I32 Array Data Pointer, 3 elements, output |
+| Return | I32, value |
+
+Set roi_out minimum length to 3. Wire allocated output arrays into the CLFN input
+terminals; the DLL does not allocate them. On status 0, trim the U16 array to
+side*side and reshape row-major to side x side. On -2, geometry is usable for
+allocation only; there are no valid crop pixels yet. On other errors, discard
+outputs. Remove the old center-output terminal rather than leaving an unused
+extra parameter. Check GetApiVersion==3 and use matching DLL/header/VI versions.
+
 GetApiVersion has no image arguments. Arrays are Data Pointers, never Array
 Handles. Allocate image width*height U16 elements with verified row-major layout.
-Use Initialize Array for each output: I32 zeros of length 4; DBL NaNs of length
-2, 4, 16 or 64 as appropriate. Wire these allocated arrays into the input side
+Use Initialize Array for the extractor's outputs: U16 storage with capacity
+min(width,height)^2 (or the query/retry flow above) and I32 zeros of length **3**.
+For numerical analyses allocate DBL NaNs of length 4, 16 or 64 as appropriate. Wire these allocated arrays into the input side
 of CLFN output terminals so the DLL receives writable storage. Set minimum array
 lengths where available and verify Array Size before and after the call. C bounds do not
 create or resize LabVIEW arrays, and the DLL cannot repair incorrect allocation.
@@ -272,9 +341,10 @@ pointer architecture, dimensions, successes/failures and end-to-end C-call time.
 No additional checking stage is benchmarked or required. No real-time or
 optical accuracy guarantee follows from synthetic timing.
 
-Optional validation expects Image0803/0792/0699/0855/0020.bmp. It reports new
-full-frame results, explicit finder geometry and old/new comparisons on the same
-**externally selected** square samples. Missing images produce exit 77/CTest
+Optional validation prioritizes Image0180.bmp and also accepts the earlier
+Image0803/0792/0699/0855/0020.bmp inputs. It reports new
+full-frame results, extractor geometry, a source-pixel equality check and old/new
+analyses on the same **DLL-returned raw square crop**. Missing images produce exit 77/CTest
 skip, not fabricated passing results. It shares the strict grayscale BMP loader
 with the earlier validator (8-bit palette or grayscale 24/32-bit uncompressed;
 unsupported formats are explicitly rejected). No image files are committed.

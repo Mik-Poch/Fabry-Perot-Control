@@ -20,9 +20,9 @@ synthetic::Parameters parameters(int w,int h) {
     return p;
 }
 template<std::size_t N> struct Guard {double before=123,v[N]{},after=456;void verify(){check(before==123&&after==456,"DBL buffer canary");}};
-struct IntGuard {int before=123,v[4]{},after=456;void verify(){check(before==123&&after==456,"I32 canary");}};
+struct IntGuard {int before=123,v[3]{},after=456;void verify(){check(before==123&&after==456,"I32 canary");}};
 int main() {try {
-    check(FPF_GetApiVersion()==2 && FP_GetApiVersion()==2,"versions coexist");
+    check(FPF_GetApiVersion()==3 && FP_GetApiVersion()==2,"versions coexist");
     for(auto shape:std::vector<std::array<int,2>>{{320,320},{640,480},{1280,960},{960,1280}}) {
         auto p=parameters(shape[0],shape[1]);auto image=synthetic::frame(p),original=image;
         for(int method=0;method<4;++method) {
@@ -40,13 +40,11 @@ int main() {try {
         Guard<16> a;Guard<64> s;check(FPF_AnalyzeAsymmetryU16(image.data(),p.width,p.height,a.v,s.v)==0,"rectangular asymmetry");a.verify();s.verify();
         check(std::hypot(a.v[1]-p.cx,a.v[2]-p.cy)<.7 && a.v[13]>=2 && a.v[14]>=10,"asymmetry geometry");
         for(int requested:{0,1,static_cast<int>(std::min(p.width,p.height)*.8)}) {
-            IntGuard roi;Guard<2> center;
-            check(FPF_FindCenteredRoiU16(image.data(),p.width,p.height,requested,roi.v,center.v)==0,"ROI locator");roi.verify();center.verify();
-            check(roi.v[2]==roi.v[3] && (!requested || roi.v[2]==requested),"square exact requested ROI");
-            if(!requested) check(roi.v[2]>2*(p.radius-12),"retain weak outer ring support beyond contrast box");
-            check(roi.v[0]>=0 && roi.v[1]>=0 && roi.v[0]+roi.v[2]<=p.width && roi.v[1]+roi.v[3]<=p.height,"ROI bounds");
-            check(std::abs(center.v[0]-p.cx)<.7 && std::abs(center.v[1]-p.cy)<.7,"independent full-frame center");
-            check(std::abs(center.v[0]-roi.v[0]-(roi.v[2]-1)/2.)<=.75 && std::abs(center.v[1]-roi.v[1]-(roi.v[3]-1)/2.)<=.75,"ROI centering");
+            IntGuard roi;std::vector<unsigned short> crop(static_cast<std::size_t>(std::min(p.width,p.height))*std::min(p.width,p.height));
+            check(FPF_FindCenteredRoiU16(image.data(),p.width,p.height,requested,crop.data(),static_cast<int>(crop.size()),roi.v)==0,"ROI locator");roi.verify();
+            check(!requested || roi.v[2]==requested,"square exact requested ROI");
+            check(roi.v[0]>=0 && roi.v[1]>=0 && roi.v[0]+roi.v[2]<=p.width && roi.v[1]+roi.v[2]<=p.height,"ROI bounds");
+            check(std::abs(p.cx-roi.v[0]-(roi.v[2]-1)/2.)<=.75 && std::abs(p.cy-roi.v[1]-(roi.v[2]-1)/2.)<=.75,"ROI centering");
         }
         check(image==original,"all APIs preserve source");
     }
@@ -72,10 +70,10 @@ int main() {try {
     auto off=parameters(640,480);off.cx=480.3;off.cy=220.7;off.radius=145;off.spacing=2500;
     auto offImage=synthetic::frame(off);double m[4];
     check(FPF_AnalyzeU16(offImage.data(),640,480,1,m)==0 && std::abs(m[1]-off.cx)<.7,"off-center rectangular B");
-    int roi[4];double center[2];
-    check(FPF_FindCenteredRoiU16(offImage.data(),640,480,0,roi,center)==0,"off-center auto ROI");
-    check(FPF_FindCenteredRoiU16(offImage.data(),640,480,400,roi,center)==-1,"impossible exact centered size");
-    for(int v:roi) check(v==0,"failed ROI is zero");for(double v:center) check(std::isnan(v),"failed center NaN");
+    int roi[3];std::vector<unsigned short> roiPixels(480*480);
+    check(FPF_FindCenteredRoiU16(offImage.data(),640,480,0,roiPixels.data(),static_cast<int>(roiPixels.size()),roi)==0,"off-center auto ROI");
+    check(FPF_FindCenteredRoiU16(offImage.data(),640,480,400,roiPixels.data(),static_cast<int>(roiPixels.size()),roi)==-1,"impossible exact centered size");
+    for(int v:roi) check(v==0,"failed ROI is zero");
     for(int bits:{8,10,12,14,16}) {
         asymSynthetic::Parameters p;p.bits=bits;p.ax=.25;p.ay=-.15;p.wx=-.18;p.wy=.12;
         auto image=asymSynthetic::frame(p);const int r[]={0,0,320};int actual[3];double old[16],os[64],a[16],s[64];
@@ -86,12 +84,12 @@ int main() {try {
         check(std::abs(a[4]-p.ax)<.04 && std::abs(a[5]-p.ay)<.04 && std::abs(a[6]-p.wx)<.04 && std::abs(a[7]-p.wy)<.04,"known signed asymmetry");
     }
     // Failure is reported directly by each analysis entry point. Keep the
-    // ROI finder's two-ring evidence independent of strict B measurements.
+    // ROI finder's local center fit independent of strict B measurements.
     auto twoParameters=parameters(320,320);twoParameters.spacing=4800;twoParameters.radius=108;
     auto twoRings=synthetic::frame(twoParameters);double invalid[4];
     check(FPF_AnalyzeU16(twoRings.data(),320,320,1,invalid)==-4,"two-ring B failure");
     for(double v:invalid) check(std::isnan(v),"two-ring failure NaN");
-    check(FPF_FindCenteredRoiU16(twoRings.data(),320,320,0,roi,center)==0,"ROI finder retains two-ring evidence");
+    check(FPF_FindCenteredRoiU16(twoRings.data(),320,320,0,roiPixels.data(),static_cast<int>(roiPixels.size()),roi)==0,"ROI finder accepts a local two-ring center fit");
     std::vector<unsigned short> blank(320*320,1000);
     for(int method=0;method<4;++method) {
         check(FPF_AnalyzeU16(blank.data(),320,320,method,invalid)==-4,"blank method failure");
@@ -103,9 +101,9 @@ int main() {try {
     for(int k=0;k<16;++k) check(std::isnan(invalidSectors[4*k]) && std::isnan(invalidSectors[4*k+1]) && invalidSectors[4*k+2]==0 && invalidSectors[4*k+3]==0,"invalid sector convention");
     auto p=parameters(320,320);auto image=synthetic::frame(p);
     auto call=[&] {
-        std::array<double,4> a;int localRoi[4];double localCenter[2],summary[16],sectors[64];
+        std::array<double,4> a;int localRoi[3];double summary[16],sectors[64];std::vector<unsigned short> localCrop(320*320);
         check(FPF_AnalyzeU16(image.data(),320,320,1,a.data())==0,"thread result");
-        check(FPF_FindCenteredRoiU16(image.data(),320,320,240,localRoi,localCenter)==0,"thread ROI");
+        check(FPF_FindCenteredRoiU16(image.data(),320,320,240,localCrop.data(),static_cast<int>(localCrop.size()),localRoi)==0,"thread ROI");
         check(FPF_AnalyzeAsymmetryU16(image.data(),320,320,summary,sectors)==0,"thread asymmetry");
         return a;
     };
@@ -116,9 +114,9 @@ int main() {try {
     check(FPF_AnalyzeU16(nullptr,320,320,1,m)==-1,"null image");
     check(FPF_AnalyzeU16(image.data(),INT_MAX,INT_MAX,1,m)==-1,"dimension overflow");
     check(FPF_AnalyzeU16(image.data(),320,320,1,nullptr)==-1,"null metrics");
-    check(FPF_FindCenteredRoiU16(image.data(),320,320,-1,roi,center)==-1,"negative size");
-    check(FPF_FindCenteredRoiU16(image.data(),320,320,0,nullptr,center)==-1,"null ROI");
-    check(FPF_FindCenteredRoiU16(image.data(),320,320,0,roi,nullptr)==-1,"null center");
+    check(FPF_FindCenteredRoiU16(image.data(),320,320,-1,roiPixels.data(),static_cast<int>(roiPixels.size()),roi)==-1,"negative size");
+    check(FPF_FindCenteredRoiU16(image.data(),320,320,0,roiPixels.data(),static_cast<int>(roiPixels.size()),nullptr)==-1,"null ROI");
+    check(FPF_FindCenteredRoiU16(image.data(),320,320,0,nullptr,0,roi)==-1,"null crop");
     double a[16],s[64];check(FPF_AnalyzeAsymmetryU16(image.data(),320,320,a,a)==-1,"overlap outputs");
     check(FPF_AnalyzeAsymmetryU16(image.data(),320,320,nullptr,s)==-1,"null summary");
     check(FPF_AnalyzeAsymmetryU16(image.data(),320,320,a,nullptr)==-1,"null sectors");

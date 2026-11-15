@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Optional five-frame diagnostic, stdlib only; no private image data committed.
+"""Optional six-frame diagnostic, stdlib only; no private image data committed.
 Usage: python fpfringe_validate.py FPFringe.dll FPAnalyzer.dll data/test_frames
-External comparison crops are explicit in this tool, never hidden in FPFringe.
+The ROI function returns the raw crop; analysis functions never crop implicitly.
 """
 import ctypes as c
 import json
@@ -10,11 +10,13 @@ import sys
 from fpfringe_ctypes_test import bind, same
 from fringe_asymmetry import load_bmp, finite_json
 
-NAMES = ('Image0803.bmp','Image0792.bmp','Image0699.bmp','Image0855.bmp','Image0020.bmp')
+NAMES = ('Image0180.bmp','Image0803.bmp','Image0792.bmp','Image0699.bmp','Image0855.bmp','Image0020.bmp')
 
 
 def main():
     new = bind(sys.argv[1])
+    if new.FPF_GetApiVersion() != 3:
+        raise SystemExit("FPFringe API 3 DLL required for the seven-argument ROI call")
     old = c.CDLL(str(Path(sys.argv[2]).resolve()))
     u,i,d = c.POINTER(c.c_ushort),c.POINTER(c.c_int),c.POINTER(c.c_double)
     old.FP_AnalyzeFrameU16WithMethod.argtypes = [u,c.c_int,c.c_int,i,c.c_int,u,c.c_int,i,d]
@@ -27,10 +29,16 @@ def main():
             continue
         pixels,w,h = load_bmp(path)
         image = (c.c_ushort*len(pixels))(*pixels)
-        roi,center = (c.c_int*4)(),(c.c_double*2)()
-        rs = new.FPF_FindCenteredRoiU16(image,w,h,0,roi,center)
-        results = {'image':name,'dimensions':[w,h],'roi_status':rs,'roi':list(roi),'center_full':list(center),
-                   'full_frame_methods':[]}
+        roi,placeholder = (c.c_int*3)(),(c.c_ushort*1)(60000)
+        rs = new.FPF_FindCenteredRoiU16(image,w,h,0,placeholder,0,roi)
+        roi_pixels = None
+        if rs == -2:
+            capacity = roi[2]*roi[2]
+            roi_pixels = (c.c_ushort*capacity)()
+            rs = new.FPF_FindCenteredRoiU16(image,w,h,0,roi_pixels,capacity,roi)
+        errors += rs != 0
+        results = {'image':name,'api_version':new.FPF_GetApiVersion(),'dimensions':[w,h],
+                   'roi_status':rs,'roi':list(roi),'full_frame_methods':[]}
         for method in range(4):
             m=(c.c_double*4)()
             status=new.FPF_AnalyzeU16(image,w,h,method,m)
@@ -39,10 +47,13 @@ def main():
         results['asymmetry_status']=new.FPF_AnalyzeAsymmetryU16(image,w,h,a,s)
         results['summary'],results['sectors']=list(a),list(s)
         if rs==0:
-            left,top,size,_=roi
-            crop_values=[pixels[(y+top)*w+x+left] for y in range(size) for x in range(size)]
-            crop=(c.c_ushort*len(crop_values))(*crop_values)
-            outcrop=(c.c_ushort*len(crop_values))()
+            left,top,size=roi
+            expected=[pixels[(y+top)*w+x+left] for y in range(size) for x in range(size)]
+            matches = list(roi_pixels) == expected
+            results['crop_matches_source'],results['valid_crop_pixels'] = matches,size*size
+            errors += not matches
+            crop = roi_pixels
+            outcrop=(c.c_ushort*(size*size))()
             request,actual=(c.c_int*3)(0,0,size),(c.c_int*3)()
             comparisons=[]
             for method in range(4):
