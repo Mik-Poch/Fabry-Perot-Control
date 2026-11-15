@@ -251,26 +251,26 @@ now verify all four exports and upload `asymmetry_benchmark.csv` with test logs.
 
 ## FPFringe: independent modular successor
 
-The project also builds **FPFringe.dll + FPFringe.h**, API version 3, alongside
-the unchanged legacy public interface FPAnalyzer.dll + FPAnalyzer.h (API 2).
-Four C/cdecl exports provide API version, centered raw-U16 square extraction with [left,top,side] geometry,
-direct A/B/C/D measurements and direct multi-ring asymmetry. Call analysis
-functions directly: status 0 enables measurement use; nonzero status rejects
-the frame's invalid result. Each analysis contains its own validity checks.
-The analysis functions accept the entire supplied rectangle without ROI detection
-or hidden cropping. LabVIEW owns acquisition, camera ROI hardware and tracking.
-Both DLLs share a static core; FPFringe never loads FPAnalyzer at runtime.
+The project builds **FPFringe.dll + FPFringe.h**, API version **4**, alongside
+FPAnalyzer.dll + FPAnalyzer.h (legacy API 2). The four C/cdecl exports provide
+version, the exact legacy automatic-ROI/method-0 crop path, direct A/B/C/D
+analysis and direct multi-ring asymmetry. FPFringe links the existing static
+fp_core; it does not load FPAnalyzer.dll.
 
-See [FPFringe API, LabVIEW and acquisition guide](docs/fpfringe.md) and
-[validation/benchmark evidence](docs/fpfringe_validation.md). Windows CI provides
-separate `FPFringe-windows-x86` and `FPFringe-windows-x64` artifacts while retaining
-the legacy packages. Actual new NI Wizard import and LabVIEW execution remain
-manual checks; use the x86 package with 32-bit LabVIEW on Windows 11 x64.
+FPF_FindCenteredRoiU16 has six arguments: U16 source, I32 width/height, caller U16
+crop, I32 capacity in U16 elements and I32[3] [left,top,size]. It directly calls
+fp::analyzeFrame with ROI [0,0,0] and method 0. No requested-size/center outputs,
+candidate expansion, alternative sizing or re-centering algorithm remain.
+The two analysis functions retain their exact public signatures/calculations.
 
-API 3 changes FPF_FindCenteredRoiU16 to seven arguments: source, width, height,
-requested side, caller-owned U16 crop, capacity in U16 elements and I32[3] ROI.
-There is no separate center output. A -2 status returns valid geometry without
-pixel writes so the caller can allocate side*side and retry. Automatic size uses
-the detected region plus a margin, and center fitting stays local. Analyze the
-returned square immediately or use its full-frame coordinates for camera setup.
-Update the old CLFN signature before loading API 3; the legacy DLL remains API 2.
+**Capacity does not allocate memory.** For 1280x960, initialize an actual U16
+output array of 921600 elements before passing capacity 921600. Use Array Data
+Pointer (not Array Handle), C/cdecl, I32 scalars by value and an allocated I32[3]
+ROI. Regenerate/reconfigure older ROI CLFN nodes for API 4. On -2 geometry is
+valid and pixels untouched; -4 can retain the complete legacy diagnostic crop.
+
+See [the API and LabVIEW allocation guide](docs/fpfringe.md) and
+[reference comparisons and measured timings](docs/fpfringe_validation.md).
+CI retains FPFringe-windows-x86/x64 and the FPAnalyzer packages. Use x86 with
+32-bit LabVIEW on Windows 11 x64. Real camera/NI execution is not established by
+native C/ctypes tests; Image0180.bmp remains optional experimental validation.

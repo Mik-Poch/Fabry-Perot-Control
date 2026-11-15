@@ -15,13 +15,13 @@ NAMES = ('Image0180.bmp','Image0803.bmp','Image0792.bmp','Image0699.bmp','Image0
 
 def main():
     new = bind(sys.argv[1])
-    if new.FPF_GetApiVersion() != 3:
-        raise SystemExit("FPFringe API 3 DLL required for the seven-argument ROI call")
+    if new.FPF_GetApiVersion() != 4:
+        raise SystemExit("FPFringe API 4 DLL required for the six-argument method-0 ROI call")
     old = c.CDLL(str(Path(sys.argv[2]).resolve()))
     u,i,d = c.POINTER(c.c_ushort),c.POINTER(c.c_int),c.POINTER(c.c_double)
     old.FP_AnalyzeFrameU16WithMethod.argtypes = [u,c.c_int,c.c_int,i,c.c_int,u,c.c_int,i,d]
     old.FP_AnalyzeFringeAsymmetryU16.argtypes = [u,c.c_int,c.c_int,i,i,d,d]
-    missing, errors = [], 0
+    missing, errors, executed = [], 0, 0
     for name in NAMES:
         path = Path(sys.argv[3])/name
         if not path.exists():
@@ -29,16 +29,24 @@ def main():
             continue
         pixels,w,h = load_bmp(path)
         image = (c.c_ushort*len(pixels))(*pixels)
-        roi,placeholder = (c.c_int*3)(),(c.c_ushort*1)(60000)
-        rs = new.FPF_FindCenteredRoiU16(image,w,h,0,placeholder,0,roi)
-        roi_pixels = None
-        if rs == -2:
-            capacity = roi[2]*roi[2]
-            roi_pixels = (c.c_ushort*capacity)()
-            rs = new.FPF_FindCenteredRoiU16(image,w,h,0,roi_pixels,capacity,roi)
-        errors += rs != 0
+        executed += 1
+        capacity = min(w,h)**2
+        roi,legacy_roi,automatic = (c.c_int*3)(),(c.c_int*3)(),(c.c_int*3)()
+        old_pixels = (c.c_ushort*(capacity+2))(*([0xA55A]*(capacity+2)))
+        roi_pixels = (c.c_ushort*(capacity+2))(*([0xA55A]*(capacity+2)))
+        old_ptr = c.cast(c.byref(old_pixels,2),u)
+        new_ptr = c.cast(c.byref(roi_pixels,2),u)
+        old_metrics = (c.c_double*4)()
+        legacy_status = old.FP_AnalyzeFrameU16WithMethod(image,w,h,automatic,0,old_ptr,capacity,legacy_roi,old_metrics)
+        rs = new.FPF_FindCenteredRoiU16(image,w,h,new_ptr,capacity,roi)
+        exact = rs==legacy_status and list(roi)==list(legacy_roi) and list(old_pixels)==list(roi_pixels)
+        canaries = roi_pixels[0]==roi_pixels[-1]==old_pixels[0]==old_pixels[-1]==0xA55A
+        source_unchanged = list(image)==pixels
+        errors += not (exact and canaries and source_unchanged)
         results = {'image':name,'api_version':new.FPF_GetApiVersion(),'dimensions':[w,h],
-                   'roi_status':rs,'roi':list(roi),'full_frame_methods':[]}
+                   'roi_status':rs,'legacy_method0_status':legacy_status,'roi':list(roi),
+                   'legacy_roi':list(legacy_roi),'roi_crop_status_exact_match':exact,
+                   'canaries_intact':canaries,'source_unchanged':source_unchanged,'full_frame_methods':[]}
         for method in range(4):
             m=(c.c_double*4)()
             status=new.FPF_AnalyzeU16(image,w,h,method,m)
@@ -46,13 +54,13 @@ def main():
         a,s=(c.c_double*16)(),(c.c_double*64)()
         results['asymmetry_status']=new.FPF_AnalyzeAsymmetryU16(image,w,h,a,s)
         results['summary'],results['sectors']=list(a),list(s)
-        if rs==0:
+        if rs in (0,-4) and roi[2]>0:
             left,top,size=roi
             expected=[pixels[(y+top)*w+x+left] for y in range(size) for x in range(size)]
-            matches = list(roi_pixels) == expected
+            matches = list(new_ptr[:size*size]) == expected
             results['crop_matches_source'],results['valid_crop_pixels'] = matches,size*size
             errors += not matches
-            crop = roi_pixels
+            crop = new_ptr
             outcrop=(c.c_ushort*(size*size))()
             request,actual=(c.c_int*3)(0,0,size),(c.c_int*3)()
             comparisons=[]
@@ -74,7 +82,8 @@ def main():
         print(json.dumps(finite_json(results),allow_nan=False))
     if missing:
         print('SKIP unavailable experimental images: '+', '.join(missing),file=sys.stderr)
-    return 1 if errors else (77 if missing else 0)
+    print(f"Experimental comparisons: executed={executed}, missing={len(missing)}, mismatches={errors}",file=sys.stderr)
+    return 1 if errors else (77 if executed==0 else 0)
 
 
 if __name__ == '__main__':

@@ -131,7 +131,7 @@ jobs:
         run: cmake --install build --config Release --prefix package
       - name: Verify permanent public filenames and installed header
         run: cmake -DPROJECT_DIR=. -DPACKAGE_DIR=package -P tests/check_public_header.cmake
-      - name: Verify FPFringe package and header
+      - name: Verify FPFringe API 4 six-parameter header and package
         shell: pwsh
         run: |
           $projectDir = (Get-Location).Path

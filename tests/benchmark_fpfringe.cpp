@@ -32,7 +32,7 @@ int main(int argc,char** argv) {
             std::vector<double> times;int failed=0;
             for(int k=-2;k<21;++k) {
                 const auto start=std::chrono::steady_clock::now();int status;
-                if(operation==0) status=FPF_FindCenteredRoiU16(image.data(),p.width,p.height,0,crop.data(),static_cast<int>(crop.size()),roi);
+                if(operation==0) status=FPF_FindCenteredRoiU16(image.data(),p.width,p.height,crop.data(),static_cast<int>(crop.size()),roi);
                 else if(operation==5) status=FPF_AnalyzeAsymmetryU16(image.data(),p.width,p.height,a,s);
                 else status=FPF_AnalyzeU16(image.data(),p.width,p.height,operation-1,m);
                 const double ms=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-start).count();

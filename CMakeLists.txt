@@ -19,7 +19,7 @@ if(FP_ENABLE_SANITIZERS)
     add_link_options(-fsanitize=address,undefined)
 endif()
 
-add_library(fp_core STATIC src/FringeDetection.cpp src/Asymmetry.cpp src/Analysis.cpp src/Pipeline.cpp src/Methods.cpp)
+add_library(fp_core STATIC src/Asymmetry.cpp src/Analysis.cpp src/Pipeline.cpp src/Methods.cpp)
 set_target_properties(fp_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_include_directories(fp_core PUBLIC src PRIVATE include)
 target_compile_features(fp_core PUBLIC cxx_std_17)

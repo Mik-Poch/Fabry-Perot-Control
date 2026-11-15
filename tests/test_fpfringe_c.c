@@ -3,7 +3,7 @@
 #include <stdio.h>
 
 typedef int (*Version)(void);
-typedef int (*Find)(const unsigned short*,int,int,int,unsigned short*,int,int*);
+typedef int (*Find)(const unsigned short*,int,int,unsigned short*,int,int*);
 typedef int (*Analyze)(const unsigned short*,int,int,int,double*);
 typedef int (*Asymmetry)(const unsigned short*,int,int,double*,double*);
 int main(void) {
@@ -18,8 +18,8 @@ int main(void) {
     struct {double before,v[16],after;} a={123,{0},456};
     struct {double before,v[64],after;} s={123,{0},456};
     int i;
-    if(version()!=3) return 1;
-    if(find(image,48,32,0,&crop.value,1,roi.v)!=FPF_NO_FRINGE_REGION) return 2;
+    if(version()!=4) return 1;
+    if(find(image,48,32,&crop.value,1,roi.v)!=FPF_NO_FRINGE_REGION) return 2;
     if(analyze(image,48,32,1,m.v)!=FPF_UNRELIABLE_MEASUREMENT) return 4;
     if(asymmetry(image,48,32,a.v,s.v)!=FPF_UNRELIABLE_MEASUREMENT) return 5;
     for(i=0;i<3;++i) if(roi.v[i]!=0) return 6;

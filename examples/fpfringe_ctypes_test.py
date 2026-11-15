@@ -14,7 +14,7 @@ def bind(path):
     u, i, d = c.POINTER(c.c_ushort), c.POINTER(c.c_int), c.POINTER(c.c_double)
     definitions = {
         'FPF_GetApiVersion': [],
-        'FPF_FindCenteredRoiU16': [u, c.c_int, c.c_int, c.c_int, u, c.c_int, i],
+        'FPF_FindCenteredRoiU16': [u, c.c_int, c.c_int, u, c.c_int, i],
         'FPF_AnalyzeU16': [u, c.c_int, c.c_int, c.c_int, d],
         'FPF_AnalyzeAsymmetryU16': [u, c.c_int, c.c_int, d, d],
     }
@@ -50,7 +50,7 @@ def main():
     u, i, d = c.POINTER(c.c_ushort), c.POINTER(c.c_int), c.POINTER(c.c_double)
     old.FP_AnalyzeFrameU16WithMethod.argtypes = [u,c.c_int,c.c_int,i,c.c_int,u,c.c_int,i,d]
     old.FP_AnalyzeFringeAsymmetryU16.argtypes = [u,c.c_int,c.c_int,i,i,d,d]
-    assert lib.FPF_GetApiVersion() == 3
+    assert lib.FPF_GetApiVersion() == 4
     try:
         lib.FPF_CheckFringesU16
     except AttributeError:
@@ -76,20 +76,23 @@ def main():
         assert before == after == 0
         assert same(previous, current) and same(ps, cs)
         compared += 80
-        output, roi_pixels = (c.c_int*3)(), (c.c_ushort*(240*240+2))()
+        output, roi_pixels = (c.c_int*3)(), (c.c_ushort*(320*320+2))()
         roi_pixels[0], roi_pixels[-1] = 123, 456
-        pointer = c.cast(c.byref(roi_pixels, c.sizeof(c.c_ushort)), c.POINTER(c.c_ushort))
-        assert lib.FPF_FindCenteredRoiU16(image,320,320,240,pointer,240*240,output) == 0
-        assert output[2] == 240 and roi_pixels[0] == 123 and roi_pixels[-1] == 456
-        left,top,side = output
-        expected = [image[(y+top)*320+x+left] for y in range(side) for x in range(side)]
-        assert list(roi_pixels[1:-1]) == expected
+        pointer = c.cast(c.byref(roi_pixels,c.sizeof(c.c_ushort)),c.POINTER(c.c_ushort))
+        automatic, legacy_roi = (c.c_int*3)(), (c.c_int*3)()
+        legacy_pixels = (c.c_ushort*(320*320))()
+        legacy_metrics = (c.c_double*4)()
+        expected_status = old.FP_AnalyzeFrameU16WithMethod(image,320,320,automatic,0,legacy_pixels,320*320,legacy_roi,legacy_metrics)
+        status = lib.FPF_FindCenteredRoiU16(image,320,320,pointer,320*320,output)
+        assert status == expected_status and list(output) == list(legacy_roi)
+        assert list(roi_pixels[1:-1]) == list(legacy_pixels)
+        assert roi_pixels[0] == 123 and roi_pixels[-1] == 456
     for w,h in ((400,320),(320,400)):
         image = render(width=w,height=h)
         m = (c.c_double*4)()
         assert lib.FPF_AnalyzeU16(image,w,h,1,m) == 0
         assert abs(m[1]-((w-1)/2+.3)) < .7 and abs(m[2]-((h-1)/2-.2)) < .7
-    print(f'PASS FPFringe ctypes: four exports, API 3, rectangular coordinates, {compared} exact legacy output comparisons (NaNs included)')
+    print(f'PASS FPFringe ctypes: four exports, API 4, rectangular coordinates, {compared} exact legacy output comparisons (NaNs included)')
 
 
 if __name__ == '__main__':

@@ -106,32 +106,30 @@ See docs/fringe_asymmetry.md for indexing, numerical limits and explicit LabVIEW
 3/16/64 allocation. Existing VIs must remain unchanged.
 
 FPFringe is the independent successor DLL, with its own FPFringe.h/.def/.map and
-four FPF_ exports (API 3). Both DLLs link the static fp_core; neither DLL may
-load the other. Only the ROI finder may construct a temporary candidate crop.
-ROI extraction uses candidate localization and locally normalized center fitting
-with bounded expansion retries; do not restore the removed post-fit full-frame
-ring-evidence gate. The public checker remains removed. Do not introduce a replacement
-pre-screen or mandatory checking stage. Analysis/asymmetry must normalize
-and process the exact supplied rectangle without ROI detection or crop copies.
-Use separate width/height and row stride width. Keep square wrappers and exact
-legacy equivalence, all old thresholds and conventions; Airy center/illumination
-coordinates scale with width and height independently. Run both legacy and
-FPFringe suites, plain C/ctypes, rectangle/portrait accuracy, sanitizers and the
-FPFringe Release CSV benchmark. Check both independent artifact/header pairs.
-FPFringe docs/fpfringe.md describes the four C prototypes, fixed LabVIEW buffer
-allocations, camera ownership, fixed tracking ROI and complete-circle limits.
+four FPF_ exports (API 4). Both DLLs link the static fp_core; neither DLL may load
+the other. FPF_FindCenteredRoiU16 is ONLY a thin direct call to fp::analyzeFrame
+with automatic ROI {0,0,0}, method 0 and private unused metrics[4]. Do not copy,
+refactor, optimize or replace that existing pipeline or its numerical algorithms.
+Do not restore custom candidate expansion/local refitting/sizing/acceptance code.
+The obsolete private FringeDetection module is removed. The checker stays absent.
 
-FPFringe callers accept measurements only on status 0 and discard failed/NaN
-results. Keep all status values and numerical rejection criteria unchanged.
-FPF_GetApiVersion is 3 after the square-crop ROI ABI change; the legacy API version 2
-is independent. Verify exactly four FPF_ exports and absence of the removed
-symbol in ctypes. Benchmark only ROI, A/B/C/D and asymmetry.
+The ROI ABI has exactly SIX parameters: source U16 pointer, I32 width, I32 height,
+caller U16 cropped pointer, I32 capacity in U16 elements, I32 roi_out[3]. There is
+no requested size or independent center output. Return status, ROI and all crop
+bytes exactly as the legacy automatic method-0 call. Preserve -2/no-pixel-write,
+-4/diagnostic-crop, validation and overlap behavior without an extra wrapper layer.
+A capacity value never allocates memory: LabVIEW must actually allocate 921600
+U16 elements before passing that capacity for a 1280x960 frame. Document all six
+CLFN parameters, C/cdecl, Array Data Pointer vs Handle, minimum ROI length 3,
+version 4 and matching DLL/header/VI. Never intentionally test a short allocation
+with a falsely large capacity; raw pointers cannot reveal allocation lengths.
 
-FPF_FindCenteredRoiU16 has exactly seven parameters: U16 source, I32 width,
-height, requested side, caller U16 crop pointer, I32 capacity in pixels, I32[3]
-[left,top,side]. No public center output. Use candidate-extent automatic sizing
-with a modest margin, not the largest frame square; document the deterministic
-rule. A -2 status retains geometry and writes no crop pixels, other errors zero
-geometry and leave crop unchanged; overlap rejects before writes. Only after all
-localization/allocation and capacity checks copy original U16 rows bit-for-bit.
-Never change shared numerical algorithms to compensate for an ROI defect.
+FPF_AnalyzeU16/FPF_AnalyzeAsymmetryU16 retain their signatures, direct rectangular
+input, numerical definitions and status conventions. Do not add implicit ROI or
+pre-screening to either. Compare the ROI wrapper directly with legacy method 0
+on the same full frames, including square/rectangular, capacities, nulls, errors,
+source preservation, byte-identical buffers and canaries on Windows x86 and x64.
+Keep all legacy tests/tolerances. Run Linux/sanitizer/ctypes checks too. Use actual
+experimental frames when available, explicitly report absent Image0180.bmp and
+never claim real-image/LabVIEW crash resolution from synthetic/native tests alone.
+Benchmark ROI, A/B/C/D and asymmetry; retain both independent artifact/header pairs.
